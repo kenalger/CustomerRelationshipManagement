@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crm_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crm_test
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crm_shadow
+      AUTH_SECRET: ci-only-secret-not-used-anywhere-real
+      AUTH_URL: http://localhost:3000
+      TOKEN_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      # Catches a schema edited without a matching migration — the most common
+      # way a green PR breaks the next deploy.
+      # Prisma 7 removed --to-schema-datamodel and --shadow-database-url from
+      # `migrate diff`; the datasource now comes from prisma.config.ts.
+      # --exit-code returns 2 when a diff exists, which is the failure we want.
+      - name: Check schema matches migrations
+        run: |
+          npx prisma migrate diff \
+            --from-config-datasource \
+            --to-schema prisma/schema.prisma \
+            --exit-code
+          echo "schema and migrations agree"
+
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # The colour and radius decisions are enforced, not aspirational — a
+      # style guide nobody can fail is one that gets ignored.
+      - run: npm run check:design
+      - run: npm test
+      - run: npm run build

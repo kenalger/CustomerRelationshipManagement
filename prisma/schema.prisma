@@ -1,0 +1,578 @@
+// CRM data model — see plan/02-data-model/domain-model.md
+// RULE: every tenant-owned table carries organizationId and a composite index leading with it.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────── enums ───────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  REP
+  READ_ONLY
+}
+
+enum LeadStatus {
+  NEW
+  WORKING
+  QUALIFIED
+  CONVERTED
+  JUNK
+}
+
+enum LeadSource {
+  FACEBOOK_LEAD_ADS
+  FACEBOOK_MESSENGER
+  FACEBOOK_COMMENT
+  EMAIL
+  CSV_IMPORT
+  WEB_FORM
+  MANUAL
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  STAGE_CHANGE
+}
+
+enum IngestionStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  DUPLICATE
+  FAILED
+}
+
+enum ConnectionProvider {
+  FACEBOOK
+  GOOGLE
+  MICROSOFT
+}
+
+enum NotificationType {
+  LEAD_ASSIGNED
+  LEAD_UNWORKED
+  CONNECTION_UNHEALTHY
+  INGESTION_DEAD_LETTERED
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  NEEDS_REAUTH
+  REVOKED
+  ERROR
+}
+
+// ─────────────────────────── tenancy + identity ───────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+
+  // Speed-to-lead policy, in minutes from lead creation.
+  // Nudge the owner first, escalate to managers if it is still untouched.
+  slaFirstTouchMinutes Int @default(30)
+  slaEscalateMinutes   Int @default(120)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  companies        Company[]
+  contacts         Contact[]
+  leads            Lead[]
+  pipelines        Pipeline[]
+  deals            Deal[]
+  activities       Activity[]
+  tasks            Task[]
+  connections      Connection[]
+  ingestionEvents  IngestionEvent[]
+  auditLogs        AuditLog[]
+  invitations      Invitation[]
+  notifications    Notification[]
+}
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  name           String?
+  passwordHash   String?
+  role           Role      @default(REP)
+  emailVerified  DateTime?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accounts        Account[]
+  sessions        Session[]
+  ownedCompanies  Company[]    @relation("CompanyOwner")
+  ownedContacts   Contact[]    @relation("ContactOwner")
+  ownedLeads      Lead[]       @relation("LeadOwner")
+  ownedDeals      Deal[]       @relation("DealOwner")
+  notifications   Notification[]
+  sentInvitations Invitation[] @relation("InvitationAuthor")
+  activities      Activity[]
+  assignedTasks   Task[]       @relation("TaskAssignee")
+  auditLogs       AuditLog[]
+
+  // Email is unique per organization, not globally — the same person may
+  // belong to two customer orgs.
+  @@unique([organizationId, email])
+  @@index([organizationId, role])
+}
+
+model Invitation {
+  id             String @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role   @default(REP)
+
+  // SHA-256 of the token, never the token itself. The raw value is shown to
+  // the admin once at creation; losing it means regenerating, not recovering.
+  tokenHash String @unique
+
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("InvitationAuthor", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  // One live invitation per address per org; re-inviting replaces the old one.
+  @@unique([organizationId, email])
+  @@index([organizationId, acceptedAt, revokedAt])
+}
+
+// Auth.js adapter tables. Not tenant-scoped — they hang off User.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────── core CRM records ───────────────────────────
+
+model Company {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  domain         String?
+  industry       String?
+  size           String?
+  phone          String?
+  website        String?
+  ownerId        String?
+
+  // Same derived recency as Contact — a stale account is the unit a manager
+  // reviews, not a stale individual.
+  lastActivityAt DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?        @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  contacts     Contact[]
+  deals        Deal[]
+
+  @@index([organizationId, deletedAt, name])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, domain])
+  @@index([organizationId, lastActivityAt])
+}
+
+model Contact {
+  id             String    @id @default(cuid())
+  organizationId String
+  firstName      String
+  lastName       String?
+  email          String?
+  phone          String?
+  title          String?
+  companyId      String?
+  ownerId        String?
+
+  // Derived recency, maintained when an activity is logged. Answers
+  // "who have I not touched in 30 days" with one indexed scan.
+  lastActivityAt DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  owner        User?        @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  deals        Deal[]
+  leads        Lead[]
+
+  @@index([organizationId, deletedAt, lastName])
+  @@index([organizationId, email])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, companyId])
+  // "Not touched in N days" — one indexed scan instead of a join per contact.
+  @@index([organizationId, lastActivityAt])
+}
+
+// ─────────────────────────── pipeline ───────────────────────────
+
+model Pipeline {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  isDefault      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stages       Stage[]
+  deals        Deal[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, deletedAt])
+}
+
+model Stage {
+  id          String  @id @default(cuid())
+  pipelineId  String
+  name        String
+  order       Int
+  probability Int     @default(0) // 0-100, drives the weighted forecast
+  isWon       Boolean @default(false)
+  isLost      Boolean @default(false)
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals    Deal[]
+
+  @@unique([pipelineId, order])
+  @@index([pipelineId])
+}
+
+model Deal {
+  id                String    @id @default(cuid())
+  organizationId    String
+  title             String
+  value             Decimal   @db.Decimal(18, 2) // money is never Float
+  currency          String    @default("USD")
+  pipelineId        String
+  stageId           String
+  contactId         String?
+  companyId         String?
+  ownerId           String?
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+
+  // When this deal entered its current stage. Without it there is no
+  // days-in-stage and no way to surface a rotting deal — the single most
+  // useful thing a manager wants from a pipeline.
+  stageEnteredAt DateTime @default(now())
+
+  // isLost on the stage records THAT a deal was lost; this records why.
+  // Without it, every loss is indistinguishable from every other.
+  lostReason String? @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pipeline     Pipeline     @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage        Stage        @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  owner        User?        @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  leads        Lead[]
+
+  @@index([organizationId, deletedAt, stageId])
+  // Rotting-deal queries scan by how long a deal has sat in one stage.
+  @@index([organizationId, stageEnteredAt])
+  @@index([organizationId, ownerId, deletedAt])
+  @@index([organizationId, pipelineId, stageId])
+  @@index([organizationId, expectedCloseDate])
+}
+
+// ─────────────────────────── lead ingestion ───────────────────────────
+
+model Lead {
+  id             String     @id @default(cuid())
+  organizationId String
+  source         LeadSource
+  status         LeadStatus @default(NEW)
+
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+  companyName String?
+  message   String?    @db.Text
+
+  // Normalized match key: lowercased email, else E.164 phone, else name+company.
+  // Unique per org so a replayed or re-submitted lead cannot duplicate.
+  dedupeKey String
+
+  ownerId          String?
+  connectionId     String?
+  ingestionEventId String?  @unique
+
+  // Set when a human qualifies the lead into real records.
+  convertedContactId String?
+  convertedDealId    String?
+  convertedAt        DateTime?
+
+  // SLA: when the owner first touched it. Null means still unworked.
+  firstTouchedAt DateTime?
+
+  // Set when each SLA stage has fired, so the sweeper nudges once rather than
+  // every five minutes. Distinct from the notification's own dedupe key: this
+  // survives the owner reading the alert without acting on it.
+  slaNotifiedAt  DateTime?
+  slaEscalatedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner            User?           @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  connection       Connection?     @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  ingestionEvent   IngestionEvent? @relation(fields: [ingestionEventId], references: [id], onDelete: SetNull)
+  convertedContact Contact?        @relation(fields: [convertedContactId], references: [id], onDelete: SetNull)
+  convertedDeal    Deal?           @relation(fields: [convertedDealId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, ownerId, status])
+  @@index([organizationId, source])
+  @@index([organizationId, firstTouchedAt])
+  // The SLA sweeper scans across all tenants, so this leads with the columns
+  // it filters on rather than organizationId.
+  @@index([firstTouchedAt, status, createdAt])
+}
+
+model Connection {
+  id             String             @id @default(cuid())
+  organizationId String
+  provider       ConnectionProvider
+  status         ConnectionStatus   @default(ACTIVE)
+
+  // Provider-side identity: Facebook page id, Google/Microsoft mailbox address.
+  externalAccountId String
+  displayName       String?
+  scopes            String[]
+
+  // Encrypted at rest by lib/crypto — never a plaintext token column.
+  encryptedTokens String? @db.Text
+  tokenExpiresAt  DateTime?
+
+  // Per-connection mapping from the provider's field names to ours.
+  // Meta form field names are chosen by whoever built the form, so the
+  // normalizer's built-in aliases are a fallback, not a contract.
+  // Shape: { "firstName": ["vorname"], "email": ["e_mail"] }
+  fieldMapping Json?
+
+  // Incremental sync cursors (Gmail historyId, Graph deltaLink).
+  syncCursor  String?
+  lastSyncAt  DateTime?
+  lastErrorAt DateTime?
+  lastError   String?  @db.Text
+  failureCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads           Lead[]
+  ingestionEvents IngestionEvent[]
+
+  @@unique([organizationId, provider, externalAccountId])
+  @@index([organizationId, status])
+}
+
+model IngestionEvent {
+  id             String             @id @default(cuid())
+  organizationId String
+  connectionId   String?
+  provider       ConnectionProvider
+
+  // Provider's own id for this payload (leadgen_id, Gmail message id).
+  // Unique per org+provider: a replayed webhook is a no-op, not a duplicate lead.
+  externalId String
+
+  payload   Json
+  status    IngestionStatus @default(RECEIVED)
+  error     String?         @db.Text
+  attempts  Int             @default(0)
+
+  // Exponential backoff cursor for the retry sweeper. Null means "eligible
+  // now"; a future timestamp means "not yet". Set on every failure.
+  nextAttemptAt DateTime?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   Connection?  @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  lead         Lead?
+
+  @@unique([organizationId, provider, externalId])
+  @@index([organizationId, status, receivedAt])
+  // The retry sweeper scans across ALL tenants, so this index deliberately
+  // leads with status rather than organizationId.
+  @@index([status, nextAttemptAt])
+  // Retention job prunes raw payloads by age — see ADR 0002 (0.5 GB free tier).
+  @@index([receivedAt])
+}
+
+// ─────────────────────────── activity + audit ───────────────────────────
+
+model Activity {
+  id             String       @id @default(cuid())
+  organizationId String
+  type           ActivityType
+  subject        String?
+  body           String?      @db.Text
+  occurredAt     DateTime     @default(now())
+  userId         String?
+
+  // Polymorphic link — exactly one of these is set.
+  contactId String?
+  companyId String?
+  dealId    String?
+  leadId    String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, contactId, occurredAt])
+  @@index([organizationId, dealId, occurredAt])
+  @@index([organizationId, leadId, occurredAt])
+  @@index([organizationId, occurredAt])
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  organizationId String
+  title          String
+  notes          String?   @db.Text
+  dueAt          DateTime?
+  assigneeId     String?
+  completedAt    DateTime?
+
+  contactId String?
+  dealId    String?
+  leadId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee     User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, assigneeId, completedAt, dueAt])
+  @@index([organizationId, dueAt])
+}
+
+/**
+ * In-app notification for one recipient.
+ *
+ * Written from unauthenticated contexts too (webhooks, the cron sweeper), so
+ * it carries an explicit organizationId + userId rather than deriving them
+ * from a session.
+ */
+model Notification {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  type           NotificationType
+  title          String
+  body           String?          @db.Text
+
+  // Deep link target, e.g. ("Lead", <id>) → /leads.
+  entity   String?
+  entityId String?
+
+  // Suppresses repeats: a broken connection would otherwise notify every
+  // admin on every 5-minute sweep. A new one is only created when no UNREAD
+  // notification with the same key exists, so acknowledging re-arms it.
+  dedupeKey String?
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, readAt, createdAt])
+  @@index([organizationId, userId, dedupeKey, readAt])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  actorId        String?
+  entity         String
+  entityId       String
+  action         String
+  before         Json?
+  after          Json?
+  at             DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, entity, entityId, at])
+  @@index([organizationId, at])
+}
