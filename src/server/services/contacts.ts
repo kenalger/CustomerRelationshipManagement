@@ -4,9 +4,21 @@ import {
   contactListFilterSchema,
   contactUpdateSchema,
 } from "@/lib/validation/crm";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireDelete, requireWrite, seesAllRecords, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
+
+/**
+ * A REP may only create records owned by themselves.
+ *
+ * Both create paths accepted a client-supplied `ownerId`. Combined with
+ * record-level visibility that is worse than it looks: a rep could create a
+ * record owned by a colleague and then immediately lose the ability to see it.
+ */
+function resolveOwner(ctx: Ctx, requested: string | null | undefined): string {
+  if (!requested || !seesAllRecords(ctx)) return ctx.userId;
+  return requested;
+}
 
 export async function listContacts(ctx: Ctx, rawFilter: unknown) {
   const filter = contactListFilterSchema.parse(rawFilter);
@@ -24,6 +36,9 @@ export async function listContacts(ctx: Ctx, rawFilter: unknown) {
           ],
         }
       : {}),
+    // Visibility last: a rep passing someone else's ownerId in the filter
+    // cannot widen what they see past their own records.
+    ...visibleTo(ctx),
   };
 
   const [rows, total] = await Promise.all([
@@ -60,8 +75,10 @@ export async function listContacts(ctx: Ctx, rawFilter: unknown) {
 }
 
 export async function getContact(ctx: Ctx, id: string) {
+  // A record the caller may not see reads as 'not found' rather than
+  // forbidden — telling them it exists is itself a leak.
   return db.contact.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
     include: {
       company: { select: { id: true, name: true } },
       owner: { select: { id: true, name: true, email: true } },
@@ -109,7 +126,7 @@ export async function createContact(ctx: Ctx, raw: unknown): Promise<Result<{ id
         phone: input.phone,
         title: input.title,
         companyId: input.companyId ?? null,
-        ownerId: input.ownerId ?? ctx.userId,
+        ownerId: resolveOwner(ctx, input.ownerId),
       },
       select: { id: true },
     });
@@ -140,7 +157,7 @@ export async function updateContact(
   // Load inside the tenant scope first: this is what turns a cross-tenant
   // update attempt into a 'not found' instead of a silent write.
   const before = await db.contact.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
   });
   if (!before) return err("Contact not found");
 
@@ -159,10 +176,11 @@ export async function updateContact(
 }
 
 export async function softDeleteContact(ctx: Ctx, id: string): Promise<Result<{ id: string }>> {
-  requireWrite(ctx);
+  // Deleting is MANAGER-and-above, not a rep action.
+  requireDelete(ctx);
 
   const existing = await db.contact.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
     select: { id: true },
   });
   if (!existing) return err("Contact not found");

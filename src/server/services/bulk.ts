@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireDelete, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
 import { convertLead } from "@/server/services/leads";
@@ -44,7 +44,14 @@ export async function bulkAssignLeads(
 
   const updated = await db.$transaction(async (tx) => {
     const result = await tx.lead.updateMany({
-      where: { id: { in: ids.data }, organizationId: ctx.organizationId, deletedAt: null },
+      where: {
+        id: { in: ids.data },
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        // A rep can only reassign leads they own. Ids that fall outside that
+        // simply match nothing and are reported as failed.
+        ...visibleTo(ctx),
+      },
       data: { ownerId },
     });
     await writeAudit(tx, ctx, {
@@ -103,7 +110,12 @@ export async function bulkSetLeadStatus(
 
   const updated = await db.$transaction(async (tx) => {
     const result = await tx.lead.updateMany({
-      where: { id: { in: ids.data }, organizationId: ctx.organizationId, deletedAt: null },
+      where: {
+        id: { in: ids.data },
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        ...visibleTo(ctx),
+      },
       data: {
         status,
         // Marking a lead junk or working IS the first touch — it stops the SLA
@@ -141,7 +153,12 @@ export async function bulkAssignContacts(
 
   const updated = await db.$transaction(async (tx) => {
     const result = await tx.contact.updateMany({
-      where: { id: { in: ids.data }, organizationId: ctx.organizationId, deletedAt: null },
+      where: {
+        id: { in: ids.data },
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        ...visibleTo(ctx),
+      },
       data: { ownerId },
     });
     await writeAudit(tx, ctx, {
@@ -160,9 +177,10 @@ export async function bulkDeleteContacts(
   ctx: Ctx,
   contactIds: string[],
 ): Promise<Result<BulkOutcome>> {
-  // Deleting many records at once is an admin-level action, not a rep one.
-  requireWrite(ctx);
-  if (ctx.role === "REP") return err("Ask an admin to delete records in bulk");
+  // Same rule as deleting one: MANAGER and above. Previously bulk refused a
+  // REP while the single-record path allowed it, so a rep could delete the
+  // whole list one row at a time.
+  requireDelete(ctx);
 
   const ids = guard(contactIds);
   if (!ids.ok) return ids;
@@ -170,7 +188,12 @@ export async function bulkDeleteContacts(
   const updated = await db.$transaction(async (tx) => {
     // Soft delete: the person's name still resolves on the deals they touched.
     const result = await tx.contact.updateMany({
-      where: { id: { in: ids.data }, organizationId: ctx.organizationId, deletedAt: null },
+      where: {
+        id: { in: ids.data },
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        ...visibleTo(ctx),
+      },
       data: { deletedAt: new Date() },
     });
     await writeAudit(tx, ctx, {

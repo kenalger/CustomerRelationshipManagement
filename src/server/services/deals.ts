@@ -1,8 +1,20 @@
 import { db } from "@/lib/db";
 import { dealCreateSchema, dealListFilterSchema, dealUpdateSchema } from "@/lib/validation/crm";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireWrite, seesAllRecords, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
+
+/**
+ * A REP may only create records owned by themselves.
+ *
+ * Both create paths accepted a client-supplied `ownerId`. Combined with
+ * record-level visibility that is worse than it looks: a rep could create a
+ * record owned by a colleague and then immediately lose the ability to see it.
+ */
+function resolveOwner(ctx: Ctx, requested: string | null | undefined): string {
+  if (!requested || !seesAllRecords(ctx)) return ctx.userId;
+  return requested;
+}
 
 export async function listDeals(ctx: Ctx, rawFilter: unknown) {
   const filter = dealListFilterSchema.parse(rawFilter);
@@ -22,6 +34,9 @@ export async function listDeals(ctx: Ctx, rawFilter: unknown) {
     ...stageFilter,
     ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
     ...(filter.q ? { title: { contains: filter.q, mode: "insensitive" as const } } : {}),
+    // Last on purpose: the visibility rule overrides the caller's own ownerId
+    // filter, so a rep who passes a colleague's id still sees only their own.
+    ...visibleTo(ctx),
   };
 
   const [rows, total] = await Promise.all([
@@ -70,7 +85,9 @@ export async function getPipelineBoard(ctx: Ctx, pipelineId?: string) {
           isWon: true,
           isLost: true,
           deals: {
-            where: { organizationId: ctx.organizationId, deletedAt: null },
+            // Scoped on the relation, not the pipeline: a rep still gets every
+            // stage column, just with only their own deals in it.
+            where: { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
             orderBy: { updatedAt: "desc" },
             take: 50,
             select: {
@@ -140,7 +157,7 @@ export async function createDeal(ctx: Ctx, raw: unknown): Promise<Result<{ id: s
         stageId,
         contactId: input.contactId ?? null,
         companyId: input.companyId ?? null,
-        ownerId: input.ownerId ?? ctx.userId,
+        ownerId: resolveOwner(ctx, input.ownerId),
         expectedCloseDate: input.expectedCloseDate ?? null,
       },
       select: { id: true },
@@ -171,7 +188,9 @@ export async function moveDealToStage(
   requireWrite(ctx);
 
   const deal = await db.deal.findFirst({
-    where: { id: dealId, organizationId: ctx.organizationId, deletedAt: null },
+    // A deal the caller cannot see falls into the "not found" branch below
+    // rather than becoming a write they were never allowed to make.
+    where: { id: dealId, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
     select: { id: true, pipelineId: true, stageId: true, stage: { select: { name: true } } },
   });
   if (!deal) return err("Deal not found");
@@ -243,9 +262,10 @@ export async function updateDeal(
   }
 
   // Loaded inside the tenant scope first, so a crafted id is "not found"
-  // rather than a silent cross-tenant write.
+  // rather than a silent cross-tenant write. The visibility rule joins it, so
+  // a rep editing someone else's deal takes the same branch.
   const before = await db.deal.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
     select: { id: true, title: true, value: true, currency: true, expectedCloseDate: true, ownerId: true },
   });
   if (!before) return err("Deal not found");
@@ -275,7 +295,9 @@ export async function updateDeal(
 
 export async function getDeal(ctx: Ctx, id: string) {
   const deal = await db.deal.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    // Invisible reads come back as null, never as a permission error —
+    // telling someone a record exists but is off-limits is itself a leak.
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
     include: {
       stage: true,
       pipeline: { select: { id: true, name: true, stages: { orderBy: { order: "asc" } } } },

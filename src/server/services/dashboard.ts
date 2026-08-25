@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { sumByCurrency, weightedByCurrency } from "@/lib/money";
-import type { Ctx } from "@/server/authz";
+import { type Ctx, visibleTo } from "@/server/authz";
 
 /**
  * Everything the overview needs, in one place. Each figure exists to answer a
@@ -8,7 +8,11 @@ import type { Ctx } from "@/server/authz";
  * dashboard a rep sees every morning.
  */
 export async function getDashboard(ctx: Ctx) {
-  const scope = { organizationId: ctx.organizationId, deletedAt: null };
+  // Visibility is part of the scope every query below spreads, so every
+  // figure on the page — deals, both lead counts, contacts, the trend and the
+  // needs-attention list — counts only what this caller may see. A rep must
+  // not learn team-wide pipeline from a dashboard total.
+  const scope = { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) };
 
   const [openDeals, newLeads, unworked, contacts, leadHistory, needsAttention] = await Promise.all([
     // "What is the pipeline worth, and what will it probably close at?"

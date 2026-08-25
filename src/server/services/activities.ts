@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { activityCreateSchema } from "@/lib/validation/crm";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 
 /** The record types an activity can hang off. Exactly one is set. */
@@ -28,7 +28,9 @@ export async function logActivity(ctx: Ctx, raw: unknown): Promise<Result<{ id: 
     return err("An activity must be attached to exactly one record");
   }
 
-  const scope = { organizationId: ctx.organizationId, deletedAt: null };
+  // Visibility as well as tenancy: logging a call against a record you cannot
+  // see would let a rep write into another rep's timeline.
+  const scope = { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) };
   const exists =
     (input.contactId && (await db.contact.findFirst({ where: { id: input.contactId, ...scope }, select: { id: true } }))) ||
     (input.companyId && (await db.company.findFirst({ where: { id: input.companyId, ...scope }, select: { id: true } }))) ||

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { buildDedupeKey, normalizePhone } from "@/lib/dedupe";
 import { leadListFilterSchema } from "@/lib/validation/crm";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
 import { notify, notifyAdmins } from "@/server/services/notifications";
@@ -299,6 +299,9 @@ export async function listLeads(ctx: Ctx, rawFilter: unknown) {
           ],
         }
       : {}),
+    // Last on purpose: the visibility rule overrides the caller's own ownerId
+    // filter, so a rep who passes a colleague's id still sees only their own.
+    ...visibleTo(ctx),
   };
 
   const [rows, total] = await Promise.all([
@@ -355,7 +358,9 @@ export async function convertLead(
   requireWrite(ctx);
 
   const lead = await db.lead.findFirst({
-    where: { id: leadId, organizationId: ctx.organizationId, deletedAt: null },
+    // A lead the caller cannot see is "not found", so conversion is never a
+    // way to pull someone else's lead into your own pipeline.
+    where: { id: leadId, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
   });
   if (!lead) return err("Lead not found");
   if (lead.status === "CONVERTED") return err("This lead has already been converted");
@@ -466,6 +471,7 @@ export async function markLeadTouched(ctx: Ctx, leadId: string): Promise<Result<
       organizationId: ctx.organizationId,
       deletedAt: null,
       firstTouchedAt: null,
+      ...visibleTo(ctx),
     },
     data: { firstTouchedAt: new Date(), status: "WORKING" },
   });

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { taskCreateSchema, taskListFilterSchema } from "@/lib/validation/tasks";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, assignedTo, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { notify } from "@/server/services/notifications";
 
@@ -35,6 +35,9 @@ export async function listTasks(ctx: Ctx, rawFilter: unknown) {
       organizationId: ctx.organizationId,
       ...(filter.scope === "mine" ? { assigneeId: ctx.userId } : {}),
       ...(filter.state === "open" ? { completedAt: null } : { completedAt: { not: null } }),
+      // Visibility last: a rep asking for scope "all" still only gets the
+      // tasks assigned to them — the rule outranks the requested scope.
+      ...assignedTo(ctx),
     },
     // Nulls last: an undated task is a someday, not the most urgent thing.
     orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
@@ -103,7 +106,9 @@ export async function createTask(ctx: Ctx, raw: unknown): Promise<Result<{ id: s
   const links = [input.contactId, input.dealId, input.leadId].filter(Boolean);
   if (links.length > 1) return err("A task can only be attached to one record");
 
-  const scope = { organizationId: ctx.organizationId, deletedAt: null };
+  // Visibility as well as tenancy: attaching a task to a record you cannot
+  // see would let a rep write into another rep's record.
+  const scope = { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) };
   if (input.contactId) {
     const found = await db.contact.findFirst({ where: { id: input.contactId, ...scope }, select: { id: true } });
     if (!found) return err("That contact does not exist");

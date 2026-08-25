@@ -4,10 +4,31 @@ import {
   companyListFilterSchema,
   companyUpdateSchema,
 } from "@/lib/validation/crm";
-import { type Ctx, requireWrite } from "@/server/authz";
+import { type Ctx, requireWrite, seesAllRecords, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
 
+/**
+ * A REP may only create records owned by themselves.
+ *
+ * Both create paths accepted a client-supplied `ownerId`. Combined with
+ * record-level visibility that is worse than it looks: a rep could create a
+ * record owned by a colleague and then immediately lose the ability to see it.
+ */
+function resolveOwner(ctx: Ctx, requested: string | null | undefined): string {
+  if (!requested || !seesAllRecords(ctx)) return ctx.userId;
+  return requested;
+}
+
+/**
+ * Companies are deliberately NOT owner-scoped.
+ *
+ * An account is shared context: this list feeds the company picker on the New
+ * Contact and New Deal forms, so scoping it would leave a rep with an empty
+ * dropdown and no way to file a contact under an existing account. Contacts,
+ * deals, leads and tasks are the owned records; the account they hang off is
+ * not. Editing a company IS still owner-scoped.
+ */
 export async function listCompanies(ctx: Ctx, rawFilter: unknown) {
   const filter = companyListFilterSchema.parse(rawFilter);
 
@@ -53,6 +74,8 @@ export async function listCompanies(ctx: Ctx, rawFilter: unknown) {
 }
 
 export async function getCompany(ctx: Ctx, id: string) {
+  // Org-wide, like listCompanies — an account is shared context. Editing it
+  // is still owner-scoped in updateCompany below.
   return db.company.findFirst({
     where: { id, organizationId: ctx.organizationId, deletedAt: null },
     include: {
@@ -90,7 +113,7 @@ export async function createCompany(ctx: Ctx, raw: unknown): Promise<Result<{ id
       data: {
         organizationId: ctx.organizationId,
         ...parsed.data,
-        ownerId: parsed.data.ownerId ?? ctx.userId,
+        ownerId: resolveOwner(ctx, parsed.data.ownerId),
       },
       select: { id: true },
     });
@@ -119,7 +142,7 @@ export async function updateCompany(
   }
 
   const before = await db.company.findFirst({
-    where: { id, organizationId: ctx.organizationId, deletedAt: null },
+    where: { id, organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) },
   });
   if (!before) return err("Company not found");
 

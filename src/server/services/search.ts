@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import type { Ctx } from "@/server/authz";
+import { type Ctx, visibleTo } from "@/server/authz";
 
 export type SearchHit = {
   id: string;
@@ -15,12 +15,16 @@ export type SearchHit = {
  * Every branch is tenant-scoped independently — this is the one place in the
  * app that queries four tables at once, so a single missed `organizationId`
  * would leak another customer's records into an autocomplete.
+ *
+ * The same argument applies to record-level visibility: `scope` carries
+ * `visibleTo(ctx)` and ALL FOUR branches spread it, so a rep cannot use the
+ * palette to read a record they would be denied on its own page.
  */
 export async function searchEverything(ctx: Ctx, term: string, perKind = 5): Promise<SearchHit[]> {
   const q = term.trim();
   if (q.length < 2) return [];
 
-  const scope = { organizationId: ctx.organizationId, deletedAt: null };
+  const scope = { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) };
   const like = { contains: q, mode: "insensitive" as const };
 
   const [leads, contacts, companies, deals] = await Promise.all([

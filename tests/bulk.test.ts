@@ -167,13 +167,14 @@ describe("bulk actions", () => {
   });
 
   it("a REP cannot bulk-delete", async () => {
+    // Deleting is MANAGER and above, for one record or many. This now throws
+    // from the role guard rather than returning a Result, which is the same
+    // contract as every other role failure.
     const rep = { ...org.ctx, role: "REP" as const };
     const created = await createContact(org.ctx, { firstName: "Safe", lastName: "Contact" });
     if (!created.ok) throw new Error(created.error);
 
-    const result = await bulkDeleteContacts(rep, [created.data.id]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/ask an admin/i);
+    await expect(bulkDeleteContacts(rep, [created.data.id])).rejects.toThrow(/permission/i);
 
     const contact = await db.contact.findUniqueOrThrow({ where: { id: created.data.id } });
     expect(contact.deletedAt).toBeNull();
