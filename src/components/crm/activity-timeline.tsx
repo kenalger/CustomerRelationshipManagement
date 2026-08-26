@@ -9,7 +9,25 @@ type Activity = {
   subject: string | null;
   body: string | null;
   occurredAt: Date;
+  outcome?: string | null;
+  durationMinutes?: number | null;
   user: { name: string | null; email: string } | null;
+};
+
+/**
+ * Outcomes in the words a person would use.
+ *
+ * "NO_SHOW" is the one that has to read clearly: it is the difference between
+ * a meeting that counted toward the target and one that did not, and a reader
+ * scanning the timeline should not have to decode an enum to see it.
+ */
+const OUTCOME_LABEL: Record<string, { label: string; cls: string }> = {
+  CONNECTED: { label: "Spoke to them", cls: "bg-success-muted text-success" },
+  NO_ANSWER: { label: "No answer", cls: "bg-sunken text-secondary" },
+  LEFT_MESSAGE: { label: "Left a message", cls: "bg-sunken text-secondary" },
+  HELD: { label: "Held", cls: "bg-success-muted text-success" },
+  NO_SHOW: { label: "No-show", cls: "bg-warning-muted text-warning" },
+  RESCHEDULED: { label: "Rescheduled", cls: "bg-sunken text-secondary" },
 };
 
 const KIND = {
@@ -63,6 +81,25 @@ export function ActivityTimeline({ activities }: { activities: Activity[] }) {
                   {timeAgo(a.occurredAt)}
                 </time>
               </div>
+
+              {a.outcome || a.durationMinutes ? (
+                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {a.outcome ? (
+                    <span
+                      className={`rounded-sm px-1.5 py-0.5 text-[11px] leading-4 ${
+                        OUTCOME_LABEL[a.outcome]?.cls ?? "bg-sunken text-secondary"
+                      }`}
+                    >
+                      {OUTCOME_LABEL[a.outcome]?.label ?? a.outcome.replaceAll("_", " ").toLowerCase()}
+                    </span>
+                  ) : null}
+                  {a.durationMinutes ? (
+                    <span className="text-[11px] tabular-nums text-muted">
+                      {a.durationMinutes} min
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
 
               {a.body ? (
                 <p className="mt-1 whitespace-pre-wrap text-[12px] leading-[18px] text-secondary">

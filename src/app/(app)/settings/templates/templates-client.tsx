@@ -341,7 +341,10 @@ export function TemplatesClient({
             hint="A sequence step without a template still creates a task — the template just gives the rep the words."
           />
         ) : (
-          <nav aria-label="Templates" className="space-y-0.5">
+          <nav
+            aria-label="Templates"
+            className="divide-y divide-border-subtle overflow-hidden rounded-md border border-border-subtle bg-surface"
+          >
             {templates.map((template) => {
               const active = template.id === selected?.id;
               return (
@@ -350,15 +353,17 @@ export function TemplatesClient({
                   href={`/settings/templates?template=${template.id}`}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "block rounded-md px-2.5 py-2 transition-colors",
+                    "block px-3 py-2.5 transition-colors",
                     active ? "bg-accent-soft text-accent" : "text-secondary hover:bg-hover",
                   )}
                 >
                   <span className="block truncate text-[14px] font-[510]">{template.name}</span>
                   <span className="block truncate text-[12px] text-muted">
-                    {template.variantLabels.length > 0
-                      ? `Variants ${template.variantLabels.join(", ")}`
-                      : "No variants"}
+                    {template.variantLabels.length === 0
+                      ? "No variants"
+                      : template.variantLabels.length === 1
+                        ? `Variant ${template.variantLabels[0]}`
+                        : `Variants ${template.variantLabels.join(", ")}`}
                     {template.usedBySteps > 0 ? ` · ${template.usedBySteps} in use` : null}
                   </span>
                 </Link>

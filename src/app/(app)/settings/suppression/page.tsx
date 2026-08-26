@@ -19,10 +19,10 @@ export default async function SuppressionSettingsPage({
   const { rows, total, perPage } = await listSuppressions(ctx, { q: q || undefined, page });
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 p-8">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-8">
       <SectionHeader
         title="Do not contact"
-        description="Addresses no campaign may ever reach. Checked before anyone is enrolled, so a suppressed address cannot be added to a sequence at all."
+        description="Addresses no campaign may ever reach."
       />
       <SuppressionClient
         rows={rows.map((row) => ({

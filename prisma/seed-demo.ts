@@ -171,6 +171,9 @@ async function main() {
     { tag: "Inbound", contact: "priya@lumenhealth.test" },
     { tag: "Referral", contact: "grace@harbourco.test" },
     { tag: "Price sensitive", contact: "s.haddad@vertexparts.test" },
+    { tag: "Retainer client", contact: "noel@brightcotton.test" },
+    { tag: "Inbound", contact: "noel@brightcotton.test" },
+    { tag: "Do not chase", contact: "amara@sableinteriors.test" },
   ];
   for (const t of taggings) {
     const contactId = contacts[t.contact];

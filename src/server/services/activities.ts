@@ -115,6 +115,11 @@ export async function listActivities(
       subject: true,
       body: true,
       occurredAt: true,
+      // Recorded on the way in and counted by the KPIs, so they have to be
+      // readable on the way out too — a call whose outcome is only ever a
+      // number in a report is a number nobody can check.
+      outcome: true,
+      durationMinutes: true,
       user: { select: { name: true, email: true } },
     },
   });

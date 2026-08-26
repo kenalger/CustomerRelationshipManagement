@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/field";
 import { Td, TableShell, Th, Tr } from "@/components/ui/table";
 import { timeUntil } from "@/lib/utils";
-import { enrollListAction, stopEnrollmentAction } from "@/server/actions/campaigns";
+import { stopEnrollmentAction } from "@/server/actions/campaigns";
 
 type Row = {
   id: string;
@@ -46,22 +46,14 @@ function Due({ at }: { at: Date | null }) {
 }
 
 /** Stop needs a reason, so it is a two-step control rather than one button. */
-function StopControl({
-  row,
-  campaignId,
-  disabled,
-}: {
-  row: Row;
-  campaignId: string;
-  disabled: boolean;
-}) {
+function StopControl({ row, campaignId }: { row: Row; campaignId: string }) {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [pending, start] = useTransition();
 
   if (!asking) {
     return (
-      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => setAsking(true)}>
+      <Button variant="ghost" size="sm" onClick={() => setAsking(true)}>
         Stop
       </Button>
     );
@@ -126,27 +118,6 @@ export function EnrollmentsTable({
   capped: boolean;
   canWrite: boolean;
 }) {
-  const [pending, start] = useTransition();
-
-  const enrollFromList = () =>
-    start(async () => {
-      const result = await enrollListAction(campaignId);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      const { enrolled, alreadyEnrolled, skipped, suppressed } = result.data;
-      // Every number, including what was dropped: a silent skip is how someone
-      // concludes a campaign reached people it never touched. Suppressed is
-      // reported separately from skipped — one is a rule working as intended,
-      // the other is a record this person could not see.
-      const parts = [`${enrolled} enrolled`];
-      if (alreadyEnrolled > 0) parts.push(`${alreadyEnrolled} already in`);
-      if (suppressed > 0) parts.push(`${suppressed} on the do-not-contact list`);
-      if (skipped > 0) parts.push(`${skipped} skipped`);
-      toast.success(parts.join(", "));
-    });
-
   return (
     <section className="rounded-md border border-border-subtle bg-surface">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-5 py-3.5">
@@ -158,11 +129,6 @@ export function EnrollmentsTable({
             Who is in this campaign, which step they are on, and when the next one falls due.
           </p>
         </div>
-        {canWrite ? (
-          <Button size="sm" variant="secondary" onClick={enrollFromList} loading={pending}>
-            Enrol from the list
-          </Button>
-        ) : null}
       </header>
 
       {capped ? (
@@ -238,7 +204,7 @@ export function EnrollmentsTable({
                   {canWrite ? (
                     <Td align="right">
                       {row.state === "ACTIVE" || row.state === "PAUSED" ? (
-                        <StopControl row={row} campaignId={campaignId} disabled={pending} />
+                        <StopControl row={row} campaignId={campaignId} />
                       ) : null}
                     </Td>
                   ) : null}
