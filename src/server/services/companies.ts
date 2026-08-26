@@ -63,6 +63,8 @@ export async function listCompanies(ctx: Ctx, rawFilter: unknown) {
         name: true,
         domain: true,
         industry: true,
+        // Stored since the model was written and displayed nowhere until now.
+        size: true,
         owner: { select: { id: true, name: true, email: true } },
         _count: { select: { contacts: true, deals: true } },
       },

@@ -78,6 +78,7 @@ export default async function CompaniesPage({ searchParams }: PageProps<"/compan
                 <Th>Name</Th>
                 <Th>Domain</Th>
                 <Th>Industry</Th>
+                <Th align="right">Size</Th>
                 <Th align="right">People</Th>
                 <Th align="right">Deals</Th>
                 <Th>Sales rep</Th>
@@ -91,6 +92,7 @@ export default async function CompaniesPage({ searchParams }: PageProps<"/compan
                   </Td>
                   <Td className="text-secondary">{c.domain ?? "—"}</Td>
                   <Td className="text-secondary">{c.industry ?? "—"}</Td>
+                  <Td align="right" className="tabular-nums text-secondary">{c.size ?? "—"}</Td>
                   <Td align="right" className="text-secondary">{c._count.contacts}</Td>
                   <Td align="right" className="text-secondary">{c._count.deals}</Td>
                   <Td className="text-secondary">{c.owner?.name ?? c.owner?.email ?? "—"}</Td>
