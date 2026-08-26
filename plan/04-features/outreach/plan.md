@@ -44,7 +44,9 @@ Nothing in the brief works end to end until sending exists. What *can* be built 
 
   Original notes: A typed weight document on `Organization.scoringRules`, ADMIN-only to change. The core `scoreLead()` is a **pure function** with no database access, so it is tested against fixed inputs rather than fixtures. Scores persist to `Lead.score` with an index on `(organizationId, status, score)` so the queue can sort on it in SQL. The bulk recompute is sequential, avoiding the documented `08P01` protocol failure.
 
-**4. Prospect lists** — 🔨 **schema migrated, service next.** `ProspectList` + `ProspectListMember`, populated from a segment (`resolveSegment`) or the existing CSV importer.
+**4. Prospect lists** — ✅ **shipped.** `ProspectList` + `ProspectListMember`, populated from a segment or by hand. Every add funnels through one visibility chokepoint, so an id the caller cannot see is *skipped* rather than refused — a rep bulk-adding 500 ids should not be told "forbidden" because two belong to a colleague, and nothing they cannot see may land on the list either way.
+
+  *Worth recording:* `memberCount` is visibility-scoped, so the size shown next to the rows always agrees with the rows. An owner and a rep therefore see different sizes for the same list — deliberate, because a count that disagrees with the page beneath it reads as a bug. And deleting a list *detaches* any campaign built from it (`onDelete: SetNull`) rather than failing: the enrollments are the durable thing, the list was only the source.
 
 **5. Campaign + Sequence model** — ✅ **shipped, without sending.** `Campaign` (goal, owner, list, status), `SequenceStep` (position, delay, template, instruction), `Enrollment` (contact/lead, position, state, next-due). Enrollments advance on a cron every 15 minutes; a step that comes due becomes a **task** carrying the step's instruction, worked by a person. Nothing in the codebase pretends a message went out — when a provider is chosen, the sender replaces the task, and everything around it is already built and tested.
 
