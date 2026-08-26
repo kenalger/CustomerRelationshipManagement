@@ -1,6 +1,6 @@
 # Feature: targets, quotas and activity KPIs
 
-- **Status:** Draft — needs decisions before build
+- **Status:** Building — schema, period arithmetic and service shipped 2026-08-26. UI in progress.
 - **Last updated:** 2026-08-26
 - **Research:** `plan/07-research/sales-kpis-and-quotas.md`
 
@@ -125,6 +125,16 @@ A manager can answer "will we hit the month, and who needs help" in one screen w
 | `lib/business-hours.ts` + org timezone | ✅ built |
 | `Activity.durationMinutes` / `outcome` | ❌ **new migration, in this release** |
 | Recurring revenue model | ❌ not planned — blocks honest agency revenue reporting |
+
+## Found during the build — recorded because the plan did not predict them
+
+**1. Team-wide targets were not unique.** `@@unique([organizationId, userId, metric, periodStart])` does not constrain rows where `userId IS NULL`, because Postgres treats NULLs as distinct in a unique index. Two identical team quotas both inserted, and an upsert keyed on that index could never match the existing row. Found by probing the real database rather than reading the schema. Fixed with `NULLS NOT DISTINCT`, which Prisma's schema language cannot express — so the index is recreated by hand in a migration and `@@unique` carries a comment saying so.
+
+**2. `period` was missing from the uniqueness key.** Every quarter starts on a month boundary, so a MONTH and a QUARTER target for the same person and metric shared a `periodStart` on 1 January, 1 April, 1 July and 1 October — the same row. Setting the quarterly quota silently overwrote the monthly one, on four days a year and no others. The service had the same gap in two lookups: `setTarget` found and overwrote the wrong row, and `copyTargets` treated a quarterly target as blocking a monthly one it never conflicted with.
+
+Both are the same lesson: **the uniqueness key was reviewed by reading it and looked right.** Neither showed up until a test wrote two rows and counted them.
+
+**3. Coverage deliberately ignores `expectedCloseDate`.** Filtering open pipeline by forecast date would drop most of it, because the field is optional and mostly unset — reporting a coverage crisis that is really a data-entry one. The `dealSlippage` report now surfaces how much of the pipeline carries no forecast date, which is the honest way to show that gap.
 
 ## Decisions needed — grill
 

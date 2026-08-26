@@ -86,8 +86,8 @@ Checked against the schema, not assumed:
 | First touches | ✅ `Lead.firstTouchedAt` |
 | Speed to lead, in working hours | ✅ already built (`lib/business-hours.ts`) |
 | Calls / emails / meetings logged | ⚠️ `Activity.type` exists, but see below |
-| **Call duration or outcome** | ❌ **Absent.** `Activity` has type, subject, body, occurredAt — no duration, no outcome, no connected/no-answer. |
-| **Meeting held vs merely booked** | ❌ Absent. No way to distinguish a meeting that happened from one that no-showed. |
+| **Call duration or outcome** | ✅ **Added 2026-08-26.** `Activity.durationMinutes` + `Activity.outcome`. Still self-reported — the product says so where it is shown. |
+| **Meeting held vs merely booked** | ✅ **Added 2026-08-26.** `ActivityOutcome.HELD` vs `NO_SHOW`/`RESCHEDULED`, constrained per activity type in validation so a call cannot be logged as HELD. |
 | Recurring revenue / retainers | ❌ Absent. Deals are one-off amounts. **An agency lives on retainers**, so "revenue won" understates the business badly. |
 | Cost per lead | ❌ Absent — no spend data anywhere, unchanged from the outreach plan. |
 
