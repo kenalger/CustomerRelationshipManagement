@@ -38,7 +38,7 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
     <>
       <PageHeader title="Contacts" description="People, and the companies they work for." />
 
-      <div className="mx-auto w-full max-w-[1280px] space-y-6 p-8">
+      <div className="mx-auto w-full max-w-[1600px] space-y-6 p-8">
         <PageToolbar
           filters={
             <form role="search" className="relative w-64">

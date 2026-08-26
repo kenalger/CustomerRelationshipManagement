@@ -350,7 +350,20 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                     <Tr key={subject.userId ?? "team"}>
                       <Td>
                         <span className="flex items-center gap-2">
-                          <Avatar name={subject.userId === null ? null : subject.name} size={20} />
+                          {subject.userId === null ? (
+                            // The team row is not a person, and an Avatar fed a
+                            // null name renders "UN", which reads as a broken
+                            // record rather than as "everyone". Matches the
+                            // marker the targets settings grid already uses.
+                            <span
+                              aria-hidden
+                              className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-[var(--tag-gray-bg)] text-[9px] font-semibold tracking-tight text-[var(--tag-gray-fg)]"
+                            >
+                              ALL
+                            </span>
+                          ) : (
+                            <Avatar name={subject.name} size={20} />
+                          )}
                           <span className="truncate font-[510]">{subject.name}</span>
                         </span>
                       </Td>

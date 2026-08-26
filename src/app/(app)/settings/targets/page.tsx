@@ -103,7 +103,17 @@ export default async function TargetsSettingsPage({
 
   const [people, targets, previousTargets] = await Promise.all([
     db.user.findMany({
-      where: { organizationId: ctx.organizationId, deletedAt: null },
+      where: {
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        // READ_ONLY is an oversight role: it owns no records, so a quota on
+        // one could never be attained by anything. An un-fillable row in a
+        // grid a manager works top-to-bottom reads as an omission rather than
+        // as a rule. `targetGrid` in the service excludes it for the same
+        // reason; this list has to agree with it or the two disagree about
+        // who exists.
+        role: { not: "READ_ONLY" },
+      },
       select: { id: true, name: true, email: true },
       // Alphabetical, always. Ordering people by a number is the league table
       // this feature is explicitly designed not to be.

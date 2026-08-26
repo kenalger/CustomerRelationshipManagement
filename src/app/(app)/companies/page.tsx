@@ -26,7 +26,7 @@ export default async function CompaniesPage({ searchParams }: PageProps<"/compan
     <>
       <PageHeader title="Companies" description="Accounts you sell to." />
 
-      <div className="mx-auto w-full max-w-[1280px] space-y-6 p-8">
+      <div className="mx-auto w-full max-w-[1600px] space-y-6 p-8">
         <PageToolbar
           filters={
             <form role="search" className="relative w-64">

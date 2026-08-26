@@ -59,7 +59,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
         description="Inbound from every connected source, deduped and assigned."
       />
 
-      <div className="mx-auto w-full max-w-[1280px] space-y-6 p-8">
+      <div className="mx-auto w-full max-w-[1600px] space-y-6 p-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-1 rounded-lg border border-border-subtle bg-surface p-0.5">
             {TABS.map((tab) => {
