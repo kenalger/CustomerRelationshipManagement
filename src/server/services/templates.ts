@@ -74,7 +74,9 @@ export type TemplateCreateInput = z.infer<typeof templateCreateSchema>;
 export type VariantUpsertInput = z.infer<typeof variantUpsertSchema>;
 
 /** The copy actually put in front of a person: a subject and a body. */
-export type Copy = { subject: string; body: string };
+import type { Copy } from "@/lib/merge-fields";
+
+export type { Copy };
 
 // ─────────────────────────── internals ───────────────────────────
 
@@ -381,17 +383,10 @@ export function copyFor(
     : { subject: template.subject, body: template.body };
 }
 
-/**
- * Substitutes `{{first_name}}`-style merge fields.
- *
- * An unknown or empty field collapses to the empty string rather than being
- * left as `{{first_name}}` — a literal placeholder reaching a prospect is the
- * classic embarrassment, and this copy is going to a rep to paste and send.
- * Pure and synchronous so it is testable without a database.
+/*
+ * `renderCopy` lives in `@/lib/merge-fields` and is re-exported here so the
+ * existing callers in this layer keep working. It moved because the template
+ * editor previews copy in the browser, and importing it from this module would
+ * pull Prisma into the client bundle.
  */
-export function renderCopy(copy: Copy, values: Record<string, string | null | undefined>): Copy {
-  const substitute = (text: string) =>
-    text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, key: string) => values[key]?.trim() ?? "");
-
-  return { subject: substitute(copy.subject), body: substitute(copy.body) };
-}
+export { renderCopy } from "@/lib/merge-fields";

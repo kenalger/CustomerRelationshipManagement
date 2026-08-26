@@ -11,6 +11,8 @@ const SECTIONS = [
   { href: "/settings/pipelines", label: "Pipelines" },
   { href: "/settings/scoring", label: "Lead scoring" },
   { href: "/settings/tags", label: "Tags" },
+  { href: "/settings/templates", label: "Templates" },
+  { href: "/settings/suppression", label: "Do not contact" },
   { href: "/settings/connections", label: "Connections" },
 ] as const;
 

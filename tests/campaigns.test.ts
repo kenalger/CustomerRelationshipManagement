@@ -24,6 +24,7 @@ import {
   updateStep,
 } from "@/server/services/campaigns";
 import { createTemplate, upsertVariant } from "@/server/services/templates";
+import { suppress } from "@/server/services/suppression";
 import { dropOrg, makeOrg } from "./factories";
 
 /** Campaign and template names collide per org, so every test gets its own. */
@@ -583,15 +584,82 @@ describe("campaigns", () => {
     });
 
     const first = await enrollList(org.ctx, id, { now: T0 });
-    expect(first.ok && first.data).toEqual({ enrolled: 1, alreadyEnrolled: 0, skipped: 0 });
+    expect(first.ok && first.data).toEqual({ enrolled: 1, alreadyEnrolled: 0, skipped: 0, suppressed: 0 });
 
     await db.prospectListMember.create({
       data: { organizationId: org.org.id, listId: list.id, leadId },
     });
 
     const second = await enrollList(org.ctx, id, { now: T0 });
-    expect(second.ok && second.data).toEqual({ enrolled: 1, alreadyEnrolled: 1, skipped: 0 });
+    expect(second.ok && second.data).toEqual({ enrolled: 1, alreadyEnrolled: 1, skipped: 0, suppressed: 0 });
     expect(await db.enrollment.count({ where: { campaignId: id } })).toBe(2);
+  });
+
+  // ─────────────── the do-not-contact list ───────────────
+
+  it("refuses to enrol a suppressed address", async () => {
+    const email = `suppressed-${randomUUID().slice(0, 8)}@example.test`;
+    const contact = await db.contact.create({
+      data: {
+        organizationId: org.org.id,
+        firstName: "Do",
+        lastName: "NotContact",
+        email,
+        ownerId: org.user.id,
+      },
+      select: { id: true },
+    });
+
+    const suppressed = await suppress(org.ctx, { email, reason: "UNSUBSCRIBED" });
+    expect(suppressed.ok).toBe(true);
+
+    const id = await makeCampaign(org.ctx, "Suppressed", [{ delayMinutes: 0 }], {
+      activate: true,
+    });
+
+    // Refused at the door, not at send time: an address that cannot be in the
+    // sequence at all cannot be emailed by a later step that forgot to check.
+    const result = await enroll(org.ctx, id, { contactId: contact.id }, T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/do-not-contact/);
+    expect(await db.enrollment.count({ where: { campaignId: id } })).toBe(0);
+  });
+
+  it("counts suppressed members of a list separately from skipped ones", async () => {
+    const email = `bulk-suppressed-${randomUUID().slice(0, 8)}@example.test`;
+    const blocked = await db.contact.create({
+      data: {
+        organizationId: org.org.id,
+        firstName: "Blocked",
+        email,
+        ownerId: org.user.id,
+      },
+      select: { id: true },
+    });
+    await suppress(org.ctx, { email, reason: "COMPLAINED" });
+
+    const list = await db.prospectList.create({
+      data: { organizationId: org.org.id, name: uniqueName("Mixed"), ownerId: org.user.id },
+    });
+    await db.prospectListMember.create({
+      data: { organizationId: org.org.id, listId: list.id, contactId: ownerContactId },
+    });
+    await db.prospectListMember.create({
+      data: { organizationId: org.org.id, listId: list.id, contactId: blocked.id },
+    });
+
+    const id = await makeCampaign(org.ctx, "Mixed list", [{ delayMinutes: 0 }], {
+      activate: true,
+      listId: list.id,
+    });
+
+    const result = await enrollList(org.ctx, id, { now: T0 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    // Suppressed is its own number: folding it into `skipped` would hide a
+    // rule doing its job behind a count that usually means "not visible".
+    expect(result.data).toEqual({ enrolled: 1, alreadyEnrolled: 0, skipped: 0, suppressed: 1 });
+    expect(await db.enrollment.count({ where: { campaignId: id } })).toBe(1);
   });
 
   // ─────────────── pause, resume, stop ───────────────

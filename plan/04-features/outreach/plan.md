@@ -1,6 +1,6 @@
 # Outbound: cold email, sequences and lead generation
 
-- **Status:** Steps 1, 3 and 7 shipped 2026-08-26. Steps 2, 4, 5, 6 outstanding. One hard blocker unchanged.
+- **Status:** Steps 1–7 shipped 2026-08-26. One hard blocker unchanged: **sending**. Suppression is the remaining piece buildable without it.
 - **Brief:** cold email campaigns · ICP prospect lists · outreach sequences · follow-up cadences · response-rate tracking · A/B testing · a lead-gen system tracking volume, conversion and cost per lead.
 
 ## Honest position: the app is inbound-only today
@@ -9,17 +9,20 @@ Everything built so far assumes a lead **arrives**. Facebook Lead Ads, forwarded
 
 Nothing here reaches *out*. Verified against the codebase:
 
+This section is kept as written on 2026-08-26 because the audit is the useful
+part; the right-hand column is updated as things land.
+
 | Capability the brief needs | Today |
 |---|---|
-| Send an email | **Absent.** No provider, no SMTP, no `Resend`/`SendGrid`/`Postmark` dependency anywhere. |
-| Sequence / cadence | Absent. No model. |
-| Campaign | Absent. |
-| Email template | Absent. |
-| Tagging / segments | **Absent as data.** The 10 code hits for "tag" are the UI badge component, not a `Tag` model. |
-| Lead scoring | Absent. |
-| Suppression / unsubscribe list | Absent. |
-| Reply tracking | Absent. Inbound email sync (M3b) was never built either. |
-| Cost per lead | Absent — no spend data exists anywhere in the schema. |
+| Send an email | **Still absent.** No provider, no SMTP, no `Resend`/`SendGrid`/`Postmark` dependency anywhere. Everything below is built to sit on top of it. |
+| Sequence / cadence | ✅ `SequenceStep` + `Enrollment`, advanced by a cron sweep. |
+| Campaign | ✅ `Campaign` with a full lifecycle. |
+| Email template | ✅ `EmailTemplate` + `TemplateVariant`, with merge fields and deterministic A/B assignment. |
+| Tagging / segments | ✅ `Tag`/`Tagging` and `Segment` as real models, with UI. |
+| Lead scoring | ✅ Editable weights, scores persisted and sortable. |
+| Suppression / unsubscribe list | ✅ `Suppression`, enforced **at enrollment** rather than at send time — a suppressed address cannot be in a sequence at all, so a later step that forgets to check cannot reach them. |
+| Reply tracking | Still absent. Inbound email sync (M3b) was never built either, and is gated on the Google CASA assessment. |
+| Cost per lead | Still absent — no spend data exists anywhere in the schema. |
 
 ## The blocker: sending
 
@@ -61,6 +64,12 @@ Nothing in the brief works end to end until sending exists. What *can* be built 
 **7. Reporting** — ✅ **shipped** (except campaign response rate, which needs campaigns). `/reports` gives lead volume and conversion by source, median first-touch in *working* minutes, open pipeline by stage with median days-in-stage flagged amber past 14 days and red past 30, win/loss with lost reasons grouped by frequency, and per-owner throughput with untouched leads called out.
 
   Two deliberate refusals: a source with no leads reports `null` conversion rather than `0%`, because "no data" and "we tried and failed" are different findings. And **cost per lead is absent with a note saying why** — no spend data exists, and a number invented from nothing is worse than its absence.
+
+**8. Suppression** — ✅ **shipped.** A do-not-contact list keyed by normalised address, at Settings → Do not contact. Adding is REP+; removing is MANAGER+ and audited, because taking someone off means contacting a person who asked not to be — the one action here with a legal edge to it.
+
+  *Worth recording:* it is keyed by **address, not by a flag on the record**. Someone unsubscribes, the contact is deleted, a CSV re-imports them next quarter — the address must still be suppressed. A flag on `Contact` would have been erased along with the row.
+
+  The check runs at **enrollment**, not at send. That is the whole point: a suppressed address sitting in an active sequence is one forgotten check away from going out. Refusing at the door means the state cannot exist. Bulk enrollment resolves the whole list's suppressions in one query and reports the count separately from "skipped" — a rule doing its job should not hide behind a number that usually means "not visible to you".
 
 ## Sequencing against what is already planned
 Tagging and scoring are independent and can start immediately. Segments build on the existing URL filters. Campaigns and sequences are meaningful without sending but only *complete* with it, so the provider decision should be made before step 5 rather than after.

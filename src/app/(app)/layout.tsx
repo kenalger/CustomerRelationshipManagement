@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Sparkles,
   Users,
+  Send,
 } from "lucide-react";
 
 import { CommandHint, CommandPalette } from "@/components/command-palette";
@@ -84,6 +85,11 @@ export default async function AppLayout({
           </NavLink>
           <NavLink href="/companies" icon={<Building2 {...ICON} />}>
             Companies
+          </NavLink>
+
+          <p className="t-caps px-2.5 pb-1 pt-5 text-muted">Outbound</p>
+          <NavLink href="/campaigns" icon={<Send {...ICON} />}>
+            Campaigns
           </NavLink>
 
           <p className="t-caps px-2.5 pb-1 pt-5 text-muted">Insight</p>

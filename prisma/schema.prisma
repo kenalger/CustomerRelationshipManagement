@@ -160,6 +160,7 @@ model Organization {
   campaigns        Campaign[]
   sequenceSteps    SequenceStep[]
   enrollments      Enrollment[]
+  suppressions     Suppression[]
 }
 
 model User {
@@ -190,6 +191,7 @@ model User {
   segments        Segment[]
   prospectLists   ProspectList[]
   campaigns       Campaign[]
+  suppressions    Suppression[]
 
   // Email is unique per organization, not globally — the same person may
   // belong to two customer orgs.
@@ -934,4 +936,47 @@ model Enrollment {
   @@unique([campaignId, contactId])
   @@unique([campaignId, leadId])
   @@index([organizationId, state, nextDueAt])
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+  /// Added by hand — a competitor, a customer who asked over the phone, a
+  /// domain the team has decided not to contact.
+  MANUAL
+}
+
+/**
+ * Addresses that must never be contacted.
+ *
+ * This exists before sending does, on purpose. A suppression list bolted on
+ * after the first campaign has already gone out is not a suppression list —
+ * it is an apology. CAN-SPAM requires a working opt-out, and GDPR and CASL
+ * constrain cold outreach to EU, UK and Canadian recipients considerably.
+ *
+ * `email` is stored lowercased and trimmed, and the unique index is on that
+ * normalised form: "Alex@Example.com" and "alex@example.com " are the same
+ * person, and a list that disagrees is worse than no list because it reports
+ * a coverage it does not have.
+ *
+ * Deliberately NOT a flag on Contact or Lead. A suppression outlives the
+ * record — someone unsubscribes, the contact is deleted, a CSV re-imports
+ * them next quarter, and the address must still be suppressed.
+ */
+model Suppression {
+  id             String            @id @default(cuid())
+  organizationId String
+  email          String
+  reason         SuppressionReason
+  note           String?
+  /// Null for machine-generated suppressions (a bounce, a webhook opt-out).
+  createdById    String?
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, email])
+  @@index([organizationId, createdAt])
 }

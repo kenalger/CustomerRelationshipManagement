@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { type Ctx, requireDelete, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
+import { isSuppressed, suppressedAmong } from "@/server/services/suppression";
 import { writeAudit } from "@/server/services/audit";
 import { createTask } from "@/server/services/tasks";
 import { copyFor, pickVariantLabel, renderCopy } from "@/server/services/templates";
@@ -867,6 +868,15 @@ export async function enroll(
   campaignId: string,
   rawTarget: unknown,
   now = new Date(),
+  /**
+   * A pre-computed set of suppressed addresses, for the bulk path.
+   *
+   * `enrollList` fetches the whole list's suppressions in one query and passes
+   * it here; without this, enrolling a 500-row list would issue 500 extra
+   * round trips. A check that is expensive is a check someone eventually
+   * removes, which is exactly how a suppressed address ends up in a sequence.
+   */
+  suppressedEmails?: Set<string>,
 ): Promise<Result<{ id: string; created: boolean; variantLabel: string | null }>> {
   requireWrite(ctx);
 
@@ -885,11 +895,21 @@ export async function enroll(
   // Both tables carry organizationId, ownerId and deletedAt, so one scope
   // fragment serves either branch.
   const scope = { organizationId: ctx.organizationId, deletedAt: null, ...visibleTo(ctx) };
-  const recordId =
+  const record =
     "contactId" in target
-      ? (await db.contact.findFirst({ where: { id: target.contactId, ...scope }, select: { id: true } }))?.id
-      : (await db.lead.findFirst({ where: { id: target.leadId, ...scope }, select: { id: true } }))?.id;
-  if (!recordId) return err("That record does not exist");
+      ? await db.contact.findFirst({ where: { id: target.contactId, ...scope }, select: { id: true, email: true } })
+      : await db.lead.findFirst({ where: { id: target.leadId, ...scope }, select: { id: true, email: true } });
+  if (!record) return err("That record does not exist");
+  const recordId = record.id;
+
+  // Suppression is checked HERE, at enrollment, not at send time. A suppressed
+  // address sitting in an active sequence is a lawsuit waiting for whoever
+  // forgets the check further down; refusing at the door means it can never be
+  // in the sequence at all.
+  const suppressed = suppressedEmails
+    ? suppressedEmails.has((record.email ?? "").trim().toLowerCase())
+    : await isSuppressed(ctx, record.email);
+  if (suppressed) return err("That address is on the do-not-contact list");
 
   const columns =
     "contactId" in target
@@ -979,7 +999,7 @@ export async function enrollList(
   ctx: Ctx,
   campaignId: string,
   options: { limit?: number; now?: Date } = {},
-): Promise<Result<{ enrolled: number; alreadyEnrolled: number; skipped: number }>> {
+): Promise<Result<{ enrolled: number; alreadyEnrolled: number; skipped: number; suppressed: number }>> {
   requireWrite(ctx);
 
   const now = options.now ?? new Date();
@@ -996,7 +1016,34 @@ export async function enrollList(
     select: { contactId: true, leadId: true },
   });
 
-  const results = { enrolled: 0, alreadyEnrolled: 0, skipped: 0 };
+  // One suppression query for the whole list, then an in-memory check per row.
+  const contactIds = members.map((m) => m.contactId).filter((v): v is string => v !== null);
+  const leadIds = members.map((m) => m.leadId).filter((v): v is string => v !== null);
+  const [memberContacts, memberLeads] = await Promise.all([
+    contactIds.length
+      ? db.contact.findMany({
+          where: { id: { in: contactIds }, organizationId: ctx.organizationId },
+          select: { id: true, email: true },
+        })
+      : [],
+    leadIds.length
+      ? db.lead.findMany({
+          where: { id: { in: leadIds }, organizationId: ctx.organizationId },
+          select: { id: true, email: true },
+        })
+      : [],
+  ]);
+
+  const emailById = new Map<string, string | null>();
+  for (const row of [...memberContacts, ...memberLeads]) emailById.set(row.id, row.email);
+
+  const suppressedEmails = await suppressedAmong(ctx, [...emailById.values()]);
+  const isMemberSuppressed = (recordId: string) => {
+    const email = emailById.get(recordId);
+    return email ? suppressedEmails.has(email.trim().toLowerCase()) : false;
+  };
+
+  const results = { enrolled: 0, alreadyEnrolled: 0, skipped: 0, suppressed: 0 };
 
   for (const member of members) {
     const target = member.contactId
@@ -1011,9 +1058,17 @@ export async function enrollList(
       continue;
     }
 
-    const outcome = await enroll(ctx, campaignId, target, now);
-    // A refusal here is nearly always "not visible to this rep", which is a
-    // skip rather than a failure of the whole run.
+    // Counted before the call rather than by matching on the refusal text —
+    // suppression and "not visible to this rep" are both skips, but only one
+    // of them is something a person needs to know about, and a count that
+    // depends on the wording of an error message breaks the day it is reworded.
+    const memberId = member.contactId ?? member.leadId;
+    if (memberId && isMemberSuppressed(memberId)) {
+      results.suppressed++;
+      continue;
+    }
+
+    const outcome = await enroll(ctx, campaignId, target, now, suppressedEmails);
     if (!outcome.ok) results.skipped++;
     else if (outcome.data.created) results.enrolled++;
     else results.alreadyEnrolled++;
