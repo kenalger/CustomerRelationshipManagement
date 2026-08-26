@@ -1,6 +1,6 @@
 # Feature: targets, quotas and activity KPIs
 
-- **Status:** Building — schema, period arithmetic and service shipped 2026-08-26. UI in progress.
+- **Status:** Shipped 2026-08-26 — schema, period arithmetic, service and all three screens. Retainer gap still open (see Honest limits §3).
 - **Last updated:** 2026-08-26
 - **Research:** `plan/07-research/sales-kpis-and-quotas.md`
 

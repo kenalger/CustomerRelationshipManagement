@@ -9,6 +9,7 @@ const SECTIONS = [
   { href: "/settings/organization", label: "General" },
   { href: "/settings/team", label: "Members" },
   { href: "/settings/pipelines", label: "Pipelines" },
+  { href: "/settings/targets", label: "Targets" },
   { href: "/settings/scoring", label: "Lead scoring" },
   { href: "/settings/tags", label: "Tags" },
   { href: "/settings/templates", label: "Templates" },

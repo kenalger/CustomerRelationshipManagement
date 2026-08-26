@@ -9,17 +9,45 @@ import { Badge, Dot, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { StatTile } from "@/components/ui/stat-tile";
-import { formatTotal } from "@/lib/money";
+import { formatMoney, formatTotal } from "@/lib/money";
 import { timeAgo } from "@/lib/utils";
 import { requireCtx } from "@/server/context";
 import { getDashboard } from "@/server/services/dashboard";
+import { attainment } from "@/server/services/targets";
+import { isMoneyMetric, pace, periodBounds } from "@/lib/targets";
+import { db } from "@/lib/db";
 import { slaSnapshot } from "@/server/services/sla";
+
+const METRIC_LABEL: Record<string, string> = {
+  REVENUE_WON: "Revenue won",
+  DEALS_WON: "Deals won",
+  LEADS_CONVERTED: "Leads converted",
+  CALLS_LOGGED: "Calls logged",
+  MEETINGS_HELD: "Meetings held",
+  FIRST_TOUCHES: "First touches",
+};
 
 export const metadata = { title: "Overview · CRM" };
 
 export default async function DashboardPage() {
   const ctx = await requireCtx();
-  const [data, sla] = await Promise.all([getDashboard(ctx), slaSnapshot(ctx)]);
+  // Read the clock once, here, and thread it through — so pace and elapsed
+  // below all describe the same instant rather than drifting mid-render.
+  const now = new Date();
+  const org = await db.organization.findUniqueOrThrow({
+    where: { id: ctx.organizationId },
+    select: { timezone: true },
+  });
+  const { start } = periodBounds("MONTH", now, org.timezone);
+
+  const [data, sla, myTargets] = await Promise.all([
+    getDashboard(ctx),
+    slaSnapshot(ctx),
+    // The signed-in user's own numbers only. A rep is scoped to themselves by
+    // the service; a manager passing their own id gets the same view rather
+    // than the whole team's, which belongs on /reports.
+    attainment(ctx, { period: "MONTH", periodStart: start, userId: ctx.userId, now }),
+  ]);
 
   // Ratio only means anything within one currency; comparing a mixed
   // pipeline's weighted total to its raw total would be arithmetic on
@@ -58,6 +86,85 @@ export default async function DashboardPage() {
               Work the queue
             </Link>
           </p>
+        ) : null}
+
+        {myTargets.length > 0 ? (
+          <section className="rounded-md border border-border-subtle bg-surface">
+            <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border-subtle px-5 py-3">
+              <h2 className="t-heading">Your month</h2>
+              <Link
+                href="/reports"
+                className="text-[13px] text-secondary transition-colors hover:text-foreground"
+              >
+                See the team
+              </Link>
+            </header>
+            <div className="grid gap-px bg-border-subtle sm:grid-cols-2 lg:grid-cols-3">
+              {myTargets.map((row) => {
+                /*
+                 * Graded against what success means for THIS metric. An
+                 * activity target at 75% is a success; a revenue quota at 75%
+                 * is not, and rendering them alike is how a team learns that
+                 * activity is the goal.
+                 */
+                const goal = row.target * row.successThreshold;
+                const state = pace(row.attained, goal, row.elapsed);
+                const tone: Tone =
+                  state === "ahead"
+                    ? "success"
+                    : state === "on-track"
+                      ? "info"
+                      : state === "behind"
+                        ? row.isOutcome
+                          ? "danger"
+                          : "warning"
+                        : "neutral";
+                const word =
+                  state === "ahead"
+                    ? "Ahead"
+                    : state === "on-track"
+                      ? "On track"
+                      : state === "behind"
+                        ? "Behind"
+                        : "Not started";
+
+                return (
+                  <div key={row.targetId} className="bg-surface p-5">
+                    <p className="t-caps text-muted">{METRIC_LABEL[row.metric]}</p>
+                    <p className="mt-1 text-[22px] font-[590] tabular-nums">
+                      {isMoneyMetric(row.metric) && row.currency
+                        ? formatMoney(row.attained, row.currency)
+                        : row.attained.toLocaleString("en-US")}
+                      <span className="text-[14px] font-normal text-muted">
+                        {" / "}
+                        {isMoneyMetric(row.metric) && row.currency
+                          ? formatMoney(row.target, row.currency)
+                          : row.target.toLocaleString("en-US")}
+                      </span>
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {/* Pace leads, because the percentage alone decides
+                          nothing without knowing how much of the month is gone. */}
+                      <Badge tone={tone}>
+                        <Dot tone={tone} />
+                        {word}
+                      </Badge>
+                      <span className="text-[12px] text-muted">
+                        {row.ratio === null
+                          ? "no target to measure against"
+                          : `${Math.round(row.ratio * 100)}% · ${Math.round(row.elapsed * 100)}% of the month gone`}
+                      </span>
+                    </div>
+                    {!row.isOutcome ? (
+                      <p className="mt-1 text-[12px] text-muted">
+                        Success here is {Math.round(row.successThreshold * 100)}%, not 100%
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
