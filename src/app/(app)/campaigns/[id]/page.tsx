@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { PageHeader } from "@/components/page-header";
+import { PageToolbar } from "@/components/page-toolbar";
 import type { Tone } from "@/components/ui/badge";
 import { Callout } from "@/components/ui/callout";
 import { db } from "@/lib/db";
@@ -122,20 +123,22 @@ export default async function CampaignDetailPage({
       <PageHeader
         title={campaign.name}
         description={campaign.goal ?? "No goal written down yet."}
-        action={
-          <LifecycleActions
-            campaignId={campaign.id}
-            status={campaign.status}
-            statusLabel={status.label}
-            stepCount={steps.length}
-            contiguous={contiguous}
-            canManage={canManage}
-            canDelete={canDelete}
-          />
-        }
       />
 
       <div className="mx-auto w-full max-w-[1080px] space-y-6 p-8">
+        <PageToolbar
+          actions={
+            <LifecycleActions
+              campaignId={campaign.id}
+              status={campaign.status}
+              statusLabel={status.label}
+              stepCount={steps.length}
+              contiguous={contiguous}
+              canManage={canManage}
+              canDelete={canDelete}
+            />
+          }
+        />
         <Callout tone="info">
           This campaign will not send any email — no email provider is connected. When a step falls
           due it creates a task for whoever owns the prospect, carrying the step&rsquo;s instruction

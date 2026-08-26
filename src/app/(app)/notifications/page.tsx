@@ -1,6 +1,7 @@
 import { BellOff } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
+import { PageToolbar } from "@/components/page-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { requireCtx } from "@/server/context";
 import { listNotifications } from "@/server/services/notifications";
@@ -18,10 +19,10 @@ export default async function NotificationsPage() {
       <PageHeader
         title="Notifications"
         description={unread === 0 ? "All caught up." : `${unread} unread`}
-        action={unread > 0 ? <MarkAllReadButton /> : undefined}
       />
 
-      <div className="mx-auto w-full max-w-5xl p-8">
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-8">
+        <PageToolbar actions={unread > 0 ? <MarkAllReadButton /> : undefined} />
         {notifications.length === 0 ? (
           <EmptyState
             icon={BellOff}

@@ -2,6 +2,7 @@ import { KanbanSquare, Plus } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
+import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatTotal, sumByCurrency } from "@/lib/money";
@@ -39,17 +40,20 @@ export default async function DealsPage() {
       <PageHeader
         title={pipeline.name}
         description={`${formatTotal(openTotal)} across ${openCount} open ${openCount === 1 ? "deal" : "deals"}`}
-        action={
-          <Link href="/deals/new">
-            <Button size="sm">
-              <Plus size={14} strokeWidth={2} aria-hidden />
-              New deal
-            </Button>
-          </Link>
-        }
       />
 
       <div className="overflow-x-auto px-8 py-8">
+        <PageToolbar
+          className="mb-6"
+          actions={
+            <Link href="/deals/new">
+              <Button size="sm">
+                <Plus size={14} strokeWidth={2} aria-hidden />
+                New deal
+              </Button>
+            </Link>
+          }
+        />
         {/* Decimal is not serialisable across the RSC boundary — the value is
             stringified here and parsed back in the client component. */}
         <PipelineBoard

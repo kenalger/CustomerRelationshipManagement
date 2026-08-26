@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 import { AccountMenu } from "@/components/account-menu";
 import { NotificationBell } from "@/components/notification-bell";
 import { db } from "@/lib/db";
@@ -7,13 +5,30 @@ import { requireCtx } from "@/server/context";
 import { unreadCount } from "@/server/services/notifications";
 
 /**
- * The page bar.
+ * The app bar: who you are and where you are, and nothing else.
  *
- * The account control is rendered HERE, inside the same centred container as
- * the page content — not pinned with `position: fixed` and compensated by a
- * right-hand gutter. That earlier arrangement centred the bar within a
- * different width than the content below it, so the title never quite lined
- * up with the table under it.
+ * It takes NO actions prop, and that is deliberate rather than an omission.
+ * This row is identical on every screen, so anything in it reads as belonging
+ * to the application; a "New contact" button here sits beside the account
+ * avatar and the eye has no way to tell a page action from app furniture.
+ *
+ * Salesforce's design system draws the same line: the global header carries
+ * only what "persists with the user through their experience" — search,
+ * notifications, help, avatar — while a page header is a separate component
+ * "distinguished from the global header through its focus on page-specific
+ * content and actions". Atlassian likewise defines a page header as a title
+ * "optionally combined with breadcrumbs, buttons, search, and filters", with
+ * the buttons beside the filters rather than in the app chrome.
+ *
+ * Page actions go in `<PageToolbar>`, inside the content column, next to the
+ * search and filters they sit alongside and directly above the thing they act
+ * on. If you are reaching for an `action` prop here, that is the component you
+ * want.
+ *
+ * The account control renders inside the same centred container as the page
+ * content, not pinned with `position: fixed` and compensated by a right-hand
+ * gutter — that earlier arrangement centred the bar within a different width
+ * than the content below it, so the title never lined up with the table.
  *
  * The user query is cheap and the session lookup behind it is request-cached,
  * so rendering the account here costs a single extra select per page.
@@ -21,11 +36,9 @@ import { unreadCount } from "@/server/services/notifications";
 export async function PageHeader({
   title,
   description,
-  action,
 }: {
   title: string;
   description?: string;
-  action?: ReactNode;
 }) {
   const ctx = await requireCtx();
   // Both reads, so they are safe to run together — it is interactive
@@ -51,10 +64,6 @@ export async function PageHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
-          {action}
-          {/* A rule between the page's own actions and the account, so the two
-              read as separate groups rather than one row of controls. */}
-          {action ? <span aria-hidden className="h-5 w-px bg-border-subtle" /> : null}
           <NotificationBell unread={unread} />
           <AccountMenu
             userName={user?.name ?? null}

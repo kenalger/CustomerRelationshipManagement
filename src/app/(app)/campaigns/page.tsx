@@ -2,6 +2,7 @@ import { Plus, Send } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
+import { PageToolbar } from "@/components/page-toolbar";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -58,19 +59,21 @@ export default async function CampaignsPage({ searchParams }: PageProps<"/campai
       <PageHeader
         title="Campaigns"
         description="Outbound sequences: who hears from us, in what order, how far apart."
-        action={
-          canWrite && !composing ? (
-            <Link href="/campaigns?new=1">
-              <Button size="sm">
-                <Plus size={14} strokeWidth={2} aria-hidden />
-                New campaign
-              </Button>
-            </Link>
-          ) : null
-        }
       />
 
       <div className="mx-auto w-full max-w-[1080px] space-y-6 p-8">
+        <PageToolbar
+          actions={
+            canWrite && !composing ? (
+              <Link href="/campaigns?new=1">
+                <Button size="sm">
+                  <Plus size={14} strokeWidth={2} aria-hidden />
+                  New campaign
+                </Button>
+              </Link>
+            ) : null
+          }
+        />
         <Callout tone="info">
           A campaign does not send email — we have not connected an email provider. When a step
           comes due it creates a task for whoever owns the prospect, carrying the instruction and

@@ -136,3 +136,24 @@ Still missing: a 15-second "taking longer than usual" fallback, retry backoff in
 ## 9. Motion
 
 150ms `ease-out` for hover and colour, 200ms for popovers, 250ms for drawers. Theme switching does **not** animate — a whole page cross-fading reads as a glitch. Respect `prefers-reduced-motion`: keep opacity, drop movement.
+
+## Where an action goes: the app bar is not a toolbar
+
+*Added 2026-08-26 after "New contact" was found sitting beside the account avatar.*
+
+Two bands, two jobs, and they must not be merged:
+
+| | Holds | Changes per page? |
+|---|---|---|
+| **App bar** (`<PageHeader>`) | Page title, description, notifications, account | Only the title |
+| **Page toolbar** (`<PageToolbar>`) | Search, filters, tabs, and the page's own actions | Entirely |
+
+`PageHeader` deliberately takes **no** `action` prop. It is not an oversight and it should not be added back: the row is identical on every screen, so anything in it reads as belonging to the application. A "New contact" button there sits next to the avatar and the eye has no way to separate a page action from app furniture.
+
+This is the line the mature design systems draw:
+
+- **Salesforce (SLDS)** — the *global header* carries only what "persists with the user through their experience": search, favourites, help, setup, notifications, avatar. There is no create button in it. A *page header* is a **separate component**, "distinguished from the global header through its focus on page-specific content and actions". ([SLDS global-header](https://raw.githubusercontent.com/salesforce-ux/design-system/master/ui/components/global-header/docs.mdx), [page-headers](https://raw.githubusercontent.com/salesforce-ux/design-system/master/ui/components/page-headers/docs.mdx), read 2026-08-26)
+- **Atlassian** — "A page header defines the top of a page. It contains a title and can be optionally combined with breadcrumbs, buttons, search, and filters." The buttons sit **with** the search and filters, not in the app chrome. ([Atlassian page header](https://atlassian.design/components/page-header/examples), read 2026-08-26)
+- **HubSpot** does put a create in its top bar — but it is a **global** "+ Quick Create" that makes a contact, company, deal, ticket or task *from anywhere*. That is app furniture, not a page's primary action, and it is a different thing from "New contact" on the contacts list. ([HubSpot navigation guide](https://knowledge.hubspot.com/help-and-resources/a-guide-to-hubspots-navigation), read via `plan/07-research/crm-ui-mechanics.md` §4.9)
+
+**Practical rule:** the action belongs directly above the thing it acts on, on the same row as the controls that narrow it. If you are reaching for an `action` prop on `PageHeader`, you want `PageToolbar`.

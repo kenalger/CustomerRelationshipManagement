@@ -225,6 +225,15 @@ export function PipelineBoard({ stages }: { stages: BoardStage[] }) {
 
   return (
     <DndContext
+      /*
+       * A fixed id, because without one dnd-kit derives its internal ids from
+       * a module-level counter that starts at 0 on each render pass. The
+       * server rendered `DndDescribedBy-0` while the browser, having already
+       * mounted a context, produced `DndDescribedBy-1` — a hydration mismatch
+       * React reported on every visit to this page. A stable id removes the
+       * counter from the equation entirely.
+       */
+      id="pipeline-board"
       sensors={sensors}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

@@ -2,6 +2,7 @@ import { Plus, Search, Upload, Users } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
+import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/field";
@@ -35,44 +36,45 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
 
   return (
     <>
-      <PageHeader
-        title="Contacts"
-        description="People, and the companies they work for."
-        action={
-          <>
-            <Link href="/contacts/import">
-              <Button size="sm" variant="secondary">
-                <Upload size={14} strokeWidth={2} aria-hidden />
-                Import CSV
-              </Button>
-            </Link>
-            <Link href="/contacts/new">
-              <Button size="sm">
-                <Plus size={14} strokeWidth={2} aria-hidden />
-                New contact
-              </Button>
-            </Link>
-          </>
-        }
-      />
+      <PageHeader title="Contacts" description="People, and the companies they work for." />
 
       <div className="mx-auto w-full max-w-[1280px] space-y-6 p-8">
-        <form role="search" className="relative w-64">
-          <Search
-            size={14}
-            strokeWidth={1.75}
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
-          />
-          <Input
-            type="search"
-            name="q"
-            defaultValue={q}
-            placeholder="Search name or email…"
-            aria-label="Search contacts"
-            className="pl-8"
-          />
-        </form>
+        <PageToolbar
+          filters={
+            <form role="search" className="relative w-64">
+              <Search
+                size={14}
+                strokeWidth={1.75}
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+              />
+              <Input
+                type="search"
+                name="q"
+                defaultValue={q}
+                placeholder="Search name or email…"
+                aria-label="Search contacts"
+                className="pl-8"
+              />
+            </form>
+          }
+          actions={
+            <>
+              <Link href="/contacts/import">
+                <Button size="sm" variant="secondary">
+                  <Upload size={14} strokeWidth={2} aria-hidden />
+                  Import CSV
+                </Button>
+              </Link>
+              <Link href="/contacts/new">
+                <Button size="sm">
+                  <Plus size={14} strokeWidth={2} aria-hidden />
+                  New contact
+                </Button>
+              </Link>
+            </>
+          }
+        />
 
         {rows.length === 0 ? (
           <EmptyState
