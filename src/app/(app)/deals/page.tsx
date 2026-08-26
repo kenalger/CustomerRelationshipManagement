@@ -42,9 +42,8 @@ export default async function DealsPage() {
         description={`${formatTotal(openTotal)} across ${openCount} open ${openCount === 1 ? "deal" : "deals"}`}
       />
 
-      <div className="overflow-x-auto px-8 py-8">
+      <div className="px-8 pt-8">
         <PageToolbar
-          className="mb-6"
           actions={
             <Link href="/deals/new">
               <Button size="sm">
@@ -54,6 +53,9 @@ export default async function DealsPage() {
             </Link>
           }
         />
+      </div>
+
+      <div className="overflow-x-auto px-8 pb-8 pt-6">
         {/* Decimal is not serialisable across the RSC boundary — the value is
             stringified here and parsed back in the client component. */}
         <PipelineBoard

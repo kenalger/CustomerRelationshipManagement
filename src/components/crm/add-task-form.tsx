@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
 import { useActionState, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -35,7 +35,7 @@ export function AddTaskForm({
         await action(formData);
         formRef.current?.reset();
       }}
-      className="flex flex-wrap items-end gap-2 border-t border-border-subtle p-3"
+      className="flex flex-wrap items-center gap-2 p-3"
     >
       {Object.entries(link).map(([key, value]) =>
         value ? <input key={key} type="hidden" name={key} value={value} /> : null,
@@ -48,11 +48,18 @@ export function AddTaskForm({
         <Input id="task-title" name="title" placeholder="Follow up on pricing…" required />
       </div>
 
-      <div>
+      <div className="flex items-center gap-1.5">
+        <CalendarDays size={14} strokeWidth={2} aria-hidden className="shrink-0 text-muted" />
         <label className="sr-only" htmlFor="task-due">
           Due date
         </label>
-        <Input id="task-due" name="dueAt" type="date" className="w-36" />
+        <Input
+          id="task-due"
+          name="dueAt"
+          type="date"
+          className="w-[9.5rem] text-secondary"
+          aria-label="Due date"
+        />
       </div>
 
       {assignees && assignees.length > 1 ? (
@@ -60,7 +67,7 @@ export function AddTaskForm({
           <label className="sr-only" htmlFor="task-assignee">
             Assign to
           </label>
-          <Select id="task-assignee" name="assigneeId" className="w-36">
+          <Select id="task-assignee" name="assigneeId" className="w-44">
             <option value="">Assign to me</option>
             {assignees.map((a) => (
               <option key={a.id} value={a.id}>

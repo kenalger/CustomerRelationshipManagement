@@ -384,6 +384,13 @@ async function main() {
     { title: "Prep Marisol rebrand deck", dueAt: ahead(3), assigneeId: iris, contact: "priya@lumenhealth.test", completedAt: null },
     { title: "Confirm Harbour invoice", dueAt: ahead(9), assigneeId: manager, contact: "grace@harbourco.test", completedAt: null },
     { title: "Chase Bright Cotton renewal", dueAt: ago(6), assigneeId: iris, contact: "noel@brightcotton.test", completedAt: ago(5) },
+    { title: "Review the Marisol rebrand pricing", dueAt: ago(4), assigneeId: owner.id, contact: "priya@lumenhealth.test", completedAt: null },
+    { title: "Sign off Northwind's Q4 scope", dueAt: ago(1), assigneeId: owner.id, contact: "dana.reyes@northwind.test", completedAt: null },
+    { title: "Call Amara back about the website", dueAt: ahead(0.3), assigneeId: owner.id, contact: "amara@sableinteriors.test", completedAt: null },
+    { title: "Send Grace the retainer proposal", dueAt: ahead(2), assigneeId: owner.id, contact: "grace@harbourco.test", completedAt: null },
+    { title: "Quarterly pipeline review with Tom", dueAt: ahead(12), assigneeId: owner.id, contact: "ken@northwind.test", completedAt: null },
+    { title: "Tidy up the lead source tags", dueAt: null, assigneeId: owner.id, contact: "s.haddad@vertexparts.test", completedAt: null },
+    { title: "Draft the Q4 case study", dueAt: null, assigneeId: owner.id, contact: "noel@brightcotton.test", completedAt: null },
   ];
   for (const spec of taskSpecs) {
     const { contact, ...fields } = spec;

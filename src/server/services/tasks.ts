@@ -56,8 +56,74 @@ export async function listTasks(ctx: Ctx, rawFilter: unknown) {
     },
   });
 
+  /*
+   * The record each task is about, resolved in three batched queries.
+   *
+   * `Task` carries bare `contactId`/`dealId`/`leadId` columns with no relation
+   * fields — the same shape as `Activity` — so these cannot be `include`d.
+   * Three queries for the whole page beats one per row, and without them the
+   * list reads "Call Samir about pricing" with no way to know which Samir or
+   * to open him. On a CRM that link is most of the value of the row.
+   */
+  const ids = (key: "contactId" | "dealId" | "leadId") =>
+    [...new Set(tasks.map((t) => t[key]).filter((v): v is string => v !== null))];
+
+  const [contacts, deals, leads] = await Promise.all([
+    ids("contactId").length
+      ? db.contact.findMany({
+          where: { id: { in: ids("contactId") }, organizationId: ctx.organizationId },
+          select: { id: true, firstName: true, lastName: true, company: { select: { name: true } } },
+        })
+      : [],
+    ids("dealId").length
+      ? db.deal.findMany({
+          where: { id: { in: ids("dealId") }, organizationId: ctx.organizationId },
+          select: { id: true, title: true },
+        })
+      : [],
+    ids("leadId").length
+      ? db.lead.findMany({
+          where: { id: { in: ids("leadId") }, organizationId: ctx.organizationId },
+          select: { id: true, firstName: true, lastName: true, companyName: true },
+        })
+      : [],
+  ]);
+
+  type Link = { kind: "contact" | "deal" | "lead"; id: string; label: string; sub: string | null };
+  const linkFor = (task: (typeof tasks)[number]): Link | null => {
+    if (task.contactId) {
+      const c = contacts.find((row) => row.id === task.contactId);
+      if (!c) return null;
+      return {
+        kind: "contact",
+        id: c.id,
+        label: [c.firstName, c.lastName].filter(Boolean).join(" "),
+        sub: c.company?.name ?? null,
+      };
+    }
+    if (task.dealId) {
+      const d = deals.find((row) => row.id === task.dealId);
+      return d ? { kind: "deal", id: d.id, label: d.title, sub: null } : null;
+    }
+    if (task.leadId) {
+      const l = leads.find((row) => row.id === task.leadId);
+      if (!l) return null;
+      return {
+        kind: "lead",
+        id: l.id,
+        label: [l.firstName, l.lastName].filter(Boolean).join(" ") || "Lead",
+        sub: l.companyName,
+      };
+    }
+    return null;
+  };
+
   const now = new Date();
-  return tasks.map((task) => ({ ...task, bucket: bucketFor(task.dueAt, now) }));
+  return tasks.map((task) => ({
+    ...task,
+    bucket: bucketFor(task.dueAt, now),
+    link: linkFor(task),
+  }));
 }
 
 /** Tasks attached to one record, for its detail page. */

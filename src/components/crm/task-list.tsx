@@ -1,12 +1,20 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Building2, Sparkles, Trash2, User } from "lucide-react";
+import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Badge, type Tone } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/ui/avatar";
+import { cn, timeAgo, timeUntil } from "@/lib/utils";
 import { deleteTaskAction, toggleTaskAction } from "@/server/actions/tasks";
+
+export type TaskLink = {
+  kind: "contact" | "deal" | "lead";
+  id: string;
+  label: string;
+  sub: string | null;
+};
 
 export type TaskItem = {
   id: string;
@@ -15,14 +23,33 @@ export type TaskItem = {
   completedAt: Date | null;
   bucket: "overdue" | "today" | "upcoming" | "someday";
   assignee?: { name: string | null; email: string } | null;
+  link?: TaskLink | null;
 };
 
-const BUCKET: Record<TaskItem["bucket"], { label: string; tone: Tone }> = {
-  overdue: { label: "overdue", tone: "danger" },
-  today: { label: "today", tone: "warning" },
-  upcoming: { label: "upcoming", tone: "neutral" },
-  someday: { label: "no date", tone: "neutral" },
-};
+/** Where a linked record lives, and the icon that says which kind it is. */
+const LINK_KIND = {
+  contact: { href: (id: string) => `/contacts/${id}`, Icon: User },
+  deal: { href: (id: string) => `/deals/${id}`, Icon: Building2 },
+  // Leads have no detail page of their own yet, so this lands on the queue.
+  lead: { href: () => `/leads`, Icon: Sparkles },
+} as const;
+
+/**
+ * When a task is due, in words.
+ *
+ * Relative rather than a locale date, because the question a person is asking
+ * of this list is "how late am I", and "2 days ago" answers it where
+ * "17/08/2026" makes them do the arithmetic. Overdue reads backwards, upcoming
+ * forwards, so the two are never confusable.
+ */
+function dueLabel(task: TaskItem): { text: string; cls: string } {
+  if (!task.dueAt) return { text: "No date", cls: "text-muted" };
+  if (task.bucket === "overdue") {
+    return { text: `Due ${timeAgo(task.dueAt)}`, cls: "text-danger font-[560]" };
+  }
+  if (task.bucket === "today") return { text: "Due today", cls: "text-warning font-[560]" };
+  return { text: timeUntil(task.dueAt).replace(/^in /, "Due in "), cls: "text-secondary" };
+}
 
 export function TaskList({
   tasks,
@@ -49,17 +76,28 @@ export function TaskList({
   );
 
   if (optimistic.length === 0) {
-    return <p className="px-4 py-6 text-center text-[12px] text-muted">{emptyHint}</p>;
+    return <p className="px-5 py-6 text-center text-[13px] text-muted">{emptyHint}</p>;
   }
 
   return (
     <ul className="divide-y divide-border-subtle">
       {optimistic.map((task) => {
         const done = Boolean(task.completedAt);
-        const bucket = BUCKET[task.bucket];
+        const due = dueLabel(task);
+        const kind = task.link ? LINK_KIND[task.link.kind] : null;
 
         return (
-          <li key={task.id} className="flex items-center gap-2.5 px-4 py-2">
+          <li
+            key={task.id}
+            className={cn(
+              "group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-hover",
+              // A left edge rather than a tinted row: it marks the group
+              // without washing the text behind a colour, and it pairs with
+              // the word "Due 2 days ago" beside it rather than carrying the
+              // meaning alone.
+              !done && task.bucket === "overdue" && "border-l-2 border-l-danger",
+            )}
+          >
             <input
               type="checkbox"
               checked={done}
@@ -72,29 +110,52 @@ export function TaskList({
                   if (!result.ok) toast.error(result.error ?? "Could not update the task");
                 });
               }}
-              className="size-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+              className="size-4 shrink-0 cursor-pointer accent-[var(--accent)]"
             />
 
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate text-[12px]",
-                done && "text-muted line-through",
-              )}
-            >
-              {task.title}
+            <span className="min-w-0 flex-1">
+              <span
+                className={cn(
+                  "block truncate text-[14px]",
+                  done ? "text-muted line-through" : "text-foreground",
+                )}
+              >
+                {task.title}
+              </span>
+
+              {/* Who the task is about. On a CRM this is most of the row:
+                  "Call Samir about pricing" is not actionable until you can
+                  see which Samir and open him. */}
+              {task.link && kind ? (
+                <Link
+                  href={kind.href(task.link.id)}
+                  className="mt-0.5 inline-flex max-w-full items-center gap-1 text-[12px] text-muted transition-colors hover:text-accent"
+                >
+                  <kind.Icon size={11} strokeWidth={2} aria-hidden className="shrink-0" />
+                  <span className="truncate">
+                    {task.link.label}
+                    {task.link.sub ? ` · ${task.link.sub}` : ""}
+                  </span>
+                </Link>
+              ) : null}
             </span>
 
             {showAssignee && task.assignee ? (
-              <span className="hidden shrink-0 text-[12px] text-muted sm:block">
-                {task.assignee.name ?? task.assignee.email}
+              <span
+                className="hidden shrink-0 items-center gap-1.5 sm:flex"
+                title={task.assignee.name ?? task.assignee.email}
+              >
+                <Avatar name={task.assignee.name ?? task.assignee.email} size={20} />
               </span>
             ) : null}
 
             {!done ? (
-              <Badge tone={bucket.tone}>
-                {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : bucket.label}
-              </Badge>
-            ) : null}
+              <span className={cn("shrink-0 text-[12px] tabular-nums", due.cls)}>{due.text}</span>
+            ) : (
+              <span className="shrink-0 text-[12px] text-muted">
+                Done {timeAgo(task.completedAt!)}
+              </span>
+            )}
 
             <button
               type="button"
@@ -106,9 +167,12 @@ export function TaskList({
                   if (!result.ok) toast.error(result.error ?? "Could not delete the task");
                 })
               }
-              className="shrink-0 rounded p-1 text-muted transition-colors hover:bg-danger-muted hover:text-danger"
+              // Hidden until the row is hovered or the button is focused, so a
+              // destructive control is not sitting on every row at rest —
+              // still keyboard reachable, which opacity-0 alone would break.
+              className="shrink-0 rounded-sm p-1 text-muted opacity-0 transition-opacity hover:bg-danger-muted hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
             >
-              <Trash2 size={12} strokeWidth={1.75} aria-hidden />
+              <Trash2 size={13} strokeWidth={1.75} aria-hidden />
             </button>
           </li>
         );
