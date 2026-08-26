@@ -5,7 +5,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
-import { Input, Textarea } from "@/components/ui/field";
+import { Input, Select, Textarea } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 import { type ActionState, logActivityAction } from "@/server/actions/crm";
 import { type TaskState, createTaskAction } from "@/server/actions/tasks";
@@ -33,6 +33,25 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/**
+ * The outcomes each activity type can carry, mirroring `OUTCOMES_BY_TYPE` in
+ * `lib/validation/crm.ts` — which is what actually enforces it. A note or an
+ * email has no outcome worth recording, so neither is listed and the control
+ * does not render.
+ */
+const OUTCOMES: Partial<Record<TabId, { value: string; label: string }[]>> = {
+  CALL: [
+    { value: "CONNECTED", label: "Spoke to them" },
+    { value: "NO_ANSWER", label: "No answer" },
+    { value: "LEFT_MESSAGE", label: "Left a message" },
+  ],
+  MEETING: [
+    { value: "HELD", label: "Meeting happened" },
+    { value: "NO_SHOW", label: "They no-showed" },
+    { value: "RESCHEDULED", label: "Rescheduled" },
+  ],
+};
 
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -183,6 +202,47 @@ export function RecordComposer({
               rows={3}
               placeholder="What happened?"
             />
+
+            {/*
+              Outcome and duration, for calls and meetings only.
+
+              Not decoration: "meetings booked" is the most gameable number in
+              sales because a no-show costs nothing to produce, so the KPI
+              counts meetings marked HELD and this is where that gets recorded.
+              Both are optional — a rep who leaves them blank logs an activity
+              as before, it simply does not count toward a target.
+            */}
+            {OUTCOMES[tab] ? (
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="t-label mb-1.5 block" htmlFor="composer-outcome">
+                    Outcome
+                  </label>
+                  <Select id="composer-outcome" name="outcome" defaultValue="" className="w-44">
+                    <option value="">Not recorded</option>
+                    {OUTCOMES[tab]?.map((outcome) => (
+                      <option key={outcome.value} value={outcome.value}>
+                        {outcome.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="t-label mb-1.5 block" htmlFor="composer-duration">
+                    Minutes
+                  </label>
+                  <Input
+                    id="composer-duration"
+                    name="durationMinutes"
+                    type="number"
+                    min={0}
+                    max={1440}
+                    placeholder="—"
+                    className="w-24 tabular-nums"
+                  />
+                </div>
+              </div>
+            ) : null}
           </>
         )}
 

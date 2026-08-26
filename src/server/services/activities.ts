@@ -47,6 +47,8 @@ export async function logActivity(ctx: Ctx, raw: unknown): Promise<Result<{ id: 
         organizationId: ctx.organizationId,
         userId: ctx.userId,
         type: input.type,
+        durationMinutes: input.durationMinutes ?? null,
+        outcome: input.outcome ?? null,
         subject: input.subject,
         body: input.body,
         occurredAt,

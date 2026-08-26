@@ -150,6 +150,53 @@ describe("derived activity recency", () => {
     expect(after.lastActivityAt).not.toBeNull();
   });
 
+  it("records a call outcome and duration", async () => {
+    const result = await logActivity(org.ctx, {
+      type: "CALL",
+      subject: "Dialled",
+      contactId,
+      outcome: "CONNECTED",
+      durationMinutes: 12,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+
+    const row = await db.activity.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { outcome: true, durationMinutes: true },
+    });
+    expect(row.outcome).toBe("CONNECTED");
+    expect(row.durationMinutes).toBe(12);
+  });
+
+  it("refuses an outcome that does not belong to the activity type", async () => {
+    // MEETINGS_HELD is a KPI. If a call could be logged as HELD, the metric
+    // could be inflated by posting a value the UI never offers.
+    const result = await logActivity(org.ctx, {
+      type: "CALL",
+      subject: "Not a meeting",
+      contactId,
+      outcome: "HELD",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.fieldErrors?.outcome).toBeTruthy();
+  });
+
+  it("leaves outcome and duration null when they are not supplied", async () => {
+    // Logging without them must keep working exactly as before.
+    const result = await logActivity(org.ctx, { type: "NOTE", subject: "Plain", contactId });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+
+    const row = await db.activity.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { outcome: true, durationMinutes: true },
+    });
+    expect(row.outcome).toBeNull();
+    expect(row.durationMinutes).toBeNull();
+  });
+
   it("never moves backwards when an older activity is backdated in", async () => {
     const before = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
 

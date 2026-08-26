@@ -156,6 +156,10 @@ export async function logActivityAction(
       type: formData.get("type") ?? "NOTE",
       subject: formData.get("subject") ?? "",
       body: formData.get("body") ?? "",
+      // An empty select posts "", which would coerce to 0 minutes and to an
+      // invalid enum member. Absent means "not recorded", so send null.
+      durationMinutes: formData.get("durationMinutes") || null,
+      outcome: formData.get("outcome") || null,
       contactId: nullable(formData, "contactId"),
       companyId: nullable(formData, "companyId"),
       dealId: nullable(formData, "dealId"),

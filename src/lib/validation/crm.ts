@@ -99,16 +99,43 @@ export const dealListFilterSchema = z.object({
   perPage: z.coerce.number().int().min(1).max(100).catch(25),
 });
 
-export const activityCreateSchema = z.object({
-  type: z.enum(["CALL", "EMAIL", "MEETING", "NOTE"]),
-  subject: optionalText(200),
-  body: z.string().trim().max(10_000).optional().or(z.literal("")).transform((v) => (v ? v : null)),
-  occurredAt: z.coerce.date().optional(),
-  contactId: z.string().cuid().nullish(),
-  companyId: z.string().cuid().nullish(),
-  dealId: z.string().cuid().nullish(),
-  leadId: z.string().cuid().nullish(),
-});
+/**
+ * Which outcomes make sense for which activity type.
+ *
+ * A call cannot be HELD and a meeting cannot be NO_ANSWER. Enforced rather
+ * than left to the UI because `MEETINGS_HELD` is a KPI, and a metric whose
+ * definition can be sidestepped by posting a different value is not a metric.
+ */
+export const OUTCOMES_BY_TYPE = {
+  CALL: ["CONNECTED", "NO_ANSWER", "LEFT_MESSAGE"],
+  MEETING: ["HELD", "NO_SHOW", "RESCHEDULED"],
+  EMAIL: [],
+  NOTE: [],
+} as const;
+
+export const activityCreateSchema = z
+  .object({
+    type: z.enum(["CALL", "EMAIL", "MEETING", "NOTE"]),
+    subject: optionalText(200),
+    body: z.string().trim().max(10_000).optional().or(z.literal("")).transform((v) => (v ? v : null)),
+    occurredAt: z.coerce.date().optional(),
+    // A day is already an absurd call. The cap is there so a typo cannot put
+    // 6000 minutes into an average and quietly ruin it for the whole team.
+    durationMinutes: z.coerce.number().int().min(0).max(1440).nullish(),
+    outcome: z
+      .enum(["CONNECTED", "NO_ANSWER", "LEFT_MESSAGE", "HELD", "NO_SHOW", "RESCHEDULED"])
+      .nullish(),
+    contactId: z.string().cuid().nullish(),
+    companyId: z.string().cuid().nullish(),
+    dealId: z.string().cuid().nullish(),
+    leadId: z.string().cuid().nullish(),
+  })
+  .refine(
+    (v) =>
+      !v.outcome ||
+      (OUTCOMES_BY_TYPE[v.type] as readonly string[]).includes(v.outcome),
+    { message: "That outcome does not apply to this kind of activity", path: ["outcome"] },
+  );
 
 export const dealUpdateSchema = z.object({
   title: z.string().trim().min(1, "Give the deal a name").max(200).optional(),

@@ -46,6 +46,25 @@ enum ActivityType {
   STAGE_CHANGE
 }
 
+/**
+ * What actually happened, as opposed to what was attempted.
+ *
+ * This exists because "meetings booked" is the most gameable metric in sales:
+ * a meeting that no-shows costs nothing to produce, so a target on bookings
+ * goes up when nothing happened. Targets are set on HELD, never on booked.
+ *
+ * For calls it is the difference between dialling and reaching someone, which
+ * is the difference a call target is actually trying to buy.
+ */
+enum ActivityOutcome {
+  CONNECTED
+  NO_ANSWER
+  LEFT_MESSAGE
+  HELD
+  NO_SHOW
+  RESCHEDULED
+}
+
 enum IngestionStatus {
   RECEIVED
   PROCESSING
@@ -161,6 +180,7 @@ model Organization {
   sequenceSteps    SequenceStep[]
   enrollments      Enrollment[]
   suppressions     Suppression[]
+  targets          Target[]
 }
 
 model User {
@@ -192,6 +212,8 @@ model User {
   prospectLists   ProspectList[]
   campaigns       Campaign[]
   suppressions    Suppression[]
+  targets         Target[]        @relation("TargetOwner")
+  targetsSet      Target[]        @relation("TargetAuthor")
 
   // Email is unique per organization, not globally — the same person may
   // belong to two customer orgs.
@@ -575,6 +597,17 @@ model Activity {
   body           String?      @db.Text
   occurredAt     DateTime     @default(now())
   userId         String?
+
+  /**
+   * Self-reported, and the product says so where it is shown.
+   *
+   * Without these two columns a "calls logged" KPI counts rows a rep created,
+   * and anyone can create forty. They do not make the number verified — only
+   * harder to inflate without leaving a trace, and they let the screen show
+   * connected calls next to dialled ones, which is where inflation shows up.
+   */
+  durationMinutes Int?
+  outcome         ActivityOutcome?
 
   // Polymorphic link — exactly one of these is set.
   contactId String?
@@ -979,4 +1012,85 @@ model Suppression {
 
   @@unique([organizationId, email])
   @@index([organizationId, createdAt])
+}
+
+enum TargetPeriod {
+  MONTH
+  QUARTER
+}
+
+/**
+ * What a target measures.
+ *
+ * The split is load-bearing, not cosmetic. The first three are OUTCOMES and
+ * are graded as committed — 100% is the expectation. The last three are
+ * ACTIVITY and are graded as aspirational, where ~70% is success.
+ *
+ * Grading them the same way is how a team learns that activity is the goal,
+ * which is precisely the Goodhart failure this feature has to survive: a rep
+ * told to make forty calls a day will make forty calls a day, and they will
+ * get shorter. `isOutcomeMetric()` in `lib/targets.ts` is the single place
+ * that distinguishes them.
+ *
+ * MEETINGS_HELD, never "meetings booked" — see `ActivityOutcome`.
+ */
+enum TargetMetric {
+  REVENUE_WON
+  DEALS_WON
+  LEADS_CONVERTED
+  CALLS_LOGGED
+  MEETINGS_HELD
+  FIRST_TOUCHES
+}
+
+/**
+ * A number somebody is measured against for a period.
+ *
+ * Quotas and activity targets are one table because they are one shape — a
+ * metric, a person, a period, a number — and one screen. Splitting them
+ * produces two settings pages that drift.
+ *
+ * Attainment is deliberately NOT stored here. It is computed live from Deals,
+ * Leads and Activities on every read: a stored figure is wrong the moment a
+ * deal is re-staged, and a "recalculate" button people forget to press is
+ * worse than no number at all.
+ */
+model Target {
+  id             String       @id @default(cuid())
+  organizationId String
+  /// Null means the whole team rather than one person.
+  userId         String?
+  metric         TargetMetric
+  period         TargetPeriod
+
+  /**
+   * Midnight on the first day of the period, resolved in the ORGANIZATION's
+   * timezone and stored as the instant that corresponds to.
+   *
+   * Not UTC. An org in Asia/Manila whose months began at midnight UTC would
+   * have every period silently start at 8am on the previous day, and every
+   * attainment figure would be wrong by up to a day's trading at both ends.
+   */
+  periodStart DateTime
+
+  value Decimal @db.Decimal(18, 2) // money is never Float
+
+  /// Set only for REVENUE_WON. `lib/money.ts` refuses to sum across
+  /// currencies, and quota attainment must not become the place that breaks
+  /// that rule.
+  currency String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation("TargetOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("TargetAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  // One target per person per metric per period. A team target (userId null)
+  // coexists with the per-person ones rather than competing with them.
+  @@unique([organizationId, userId, metric, periodStart])
+  @@index([organizationId, periodStart])
+  @@index([organizationId, userId, periodStart])
 }
