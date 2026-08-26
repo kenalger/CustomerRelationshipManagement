@@ -445,6 +445,11 @@ model Lead {
 
   // SLA: when the owner first touched it. Null means still unworked.
   firstTouchedAt DateTime?
+  /// Derived recency, maintained by `logActivity` exactly as Contact's is,
+  /// so "no contact in 30 days" is one indexed scan rather than a join
+  /// against every activity row. Distinct from `firstTouchedAt`, which
+  /// never moves after the first touch and is what the SLA measures.
+  lastActivityAt DateTime?
 
   // Set when each SLA stage has fired, so the sweeper nudges once rather than
   // every five minutes. Distinct from the notification's own dedupe key: this
@@ -471,6 +476,7 @@ model Lead {
   @@index([organizationId, ownerId, status])
   @@index([organizationId, source])
   @@index([organizationId, firstTouchedAt])
+  @@index([organizationId, lastActivityAt])
   // Working the highest-value leads first is the point of scoring them.
   @@index([organizationId, status, score])
   // The SLA sweeper scans across all tenants, so this leads with the columns

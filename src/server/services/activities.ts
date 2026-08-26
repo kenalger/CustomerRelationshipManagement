@@ -81,6 +81,16 @@ export async function logActivity(ctx: Ctx, raw: unknown): Promise<Result<{ id: 
         data: { lastActivityAt: occurredAt },
       });
     }
+    if (input.leadId) {
+      await tx.lead.updateMany({
+        where: {
+          id: input.leadId,
+          organizationId: ctx.organizationId,
+          OR: [{ lastActivityAt: null }, { lastActivityAt: { lt: occurredAt } }],
+        },
+        data: { lastActivityAt: occurredAt },
+      });
+    }
 
     return created;
   });

@@ -38,7 +38,7 @@ Nothing in the brief works end to end until sending exists. What *can* be built 
 
   *Worth recording:* Postgres unique indexes are case-sensitive, so `@@unique([organizationId, name])` would have happily allowed both "Enterprise" and "enterprise". An explicit case-insensitive pre-check does the real work, with `P2002` caught as a race backstop.
 
-**2. Segments (saved filters)** — 🔨 **in progress.** A named, saved query over leads/contacts/companies. `Segment.filter` is a *typed document*, validated on the way in and translated to a Prisma `where` on the way out — deliberately not a stored `where` clause, because a saved row that can dictate a query is a way to walk around `visibleTo(ctx)`. Shared segments are visible to the whole group, but a rep running one still sees only their own records: a segment narrows, it never widens.
+**2. Segments (saved filters)** — ✅ **shipped.** A named, saved query over leads/contacts/companies. `Segment.filter` is a *typed document*, validated on the way in and translated to a Prisma `where` on the way out — deliberately not a stored `where` clause, because a saved row that can dictate a query is a way to walk around `visibleTo(ctx)`. Shared segments are visible to the whole group, but a rep running one still sees only their own records: a segment narrows, it never widens.
 
 **3. Lead scoring** — ✅ **shipped, end to end.** Weights are editable at Settings → Lead scoring (ADMIN+), the queue sorts on the score, and an unscored lead shows a dash rather than a 0 — `Lead.score` defaults to 0, so "nobody has scored this" and "this is worthless" would otherwise look identical. Recalculating is an explicit, bounded action rather than something a form submission does to 50k rows.
 
@@ -46,11 +46,15 @@ Nothing in the brief works end to end until sending exists. What *can* be built 
 
 **4. Prospect lists** — 🔨 **schema migrated, service next.** `ProspectList` + `ProspectListMember`, populated from a segment (`resolveSegment`) or the existing CSV importer.
 
-**5. Campaign + Sequence model** — 🔨 **in progress.** `Campaign` (goal, owner, list, status), `SequenceStep` (position, delay, template, instruction), `Enrollment` (contact/lead, position, state, next-due). Enrollments advance on a cron; a step that comes due becomes a **task** carrying the step's instruction, worked by a person. Nothing in the codebase pretends a message went out — when a provider is chosen, the sender replaces the task, and everything around it is already built and tested.
+**5. Campaign + Sequence model** — ✅ **shipped, without sending.** `Campaign` (goal, owner, list, status), `SequenceStep` (position, delay, template, instruction), `Enrollment` (contact/lead, position, state, next-due). Enrollments advance on a cron every 15 minutes; a step that comes due becomes a **task** carrying the step's instruction, worked by a person. Nothing in the codebase pretends a message went out — when a provider is chosen, the sender replaces the task, and everything around it is already built and tested.
 
-  *Worth recording:* `delayMinutes` is measured from the previous step completing, not from enrollment, so inserting a step does not reschedule the whole sequence. And the sweep is **sequential**, not `Promise.all` — concurrent interactive transactions on the pg adapter produce `08P01`, which this project has now hit twice.
+  *Worth recording:* the sweep is **task-first, then advance**. A crash between the two repeats a task, which is noise; advancing first and crashing would skip a prospect's step, which is a lost deal. At-least-once is the right bias for outreach, and the advance is a compare-and-set on the position it read so it cannot double-advance either.
 
-**6. Templates + A/B variants** — 🔨 **in progress.** `EmailTemplate` + `TemplateVariant`. Variant assignment is a stable hash of the enrollment, not `Math.random()`, so a retry can never flip a prospect between variants — which is the difference between an A/B test and two piles of noise.
+  Business hours are deliberately not applied to sequence delays: `lib/business-hours.ts` *measures* elapsed working minutes and has no inverse that *adds* them, and what comes due is a task in a queue rather than a message in an inbox — a 3am due time is picked up when the rep starts their day. Send-window shaping belongs in the sender, next to the deliverability rules, once one exists.
+
+  *Also worth recording:* `delayMinutes` is measured from the previous step completing, not from enrollment, so inserting a step does not reschedule the whole sequence. And the sweep is **sequential**, not `Promise.all` — concurrent interactive transactions on the pg adapter produce `08P01`, which this project has now hit twice.
+
+**6. Templates + A/B variants** — ✅ **shipped.** `EmailTemplate` + `TemplateVariant`. Variant assignment is a stable hash of the enrollment, not `Math.random()`, so a retry can never flip a prospect between variants — which is the difference between an A/B test and two piles of noise.
 
 **7. Reporting** — ✅ **shipped** (except campaign response rate, which needs campaigns). `/reports` gives lead volume and conversion by source, median first-touch in *working* minutes, open pipeline by stage with median days-in-stage flagged amber past 14 days and red past 30, win/loss with lost reasons grouped by frequency, and per-owner throughput with untouched leads called out.
 

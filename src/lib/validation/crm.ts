@@ -38,6 +38,10 @@ const sortDir = z.enum(["asc", "desc"]).catch("asc");
 
 export const leadListFilterSchema = z.object({
   status: z.enum(["NEW", "WORKING", "QUALIFIED", "CONVERTED", "JUNK"]).optional(),
+  // A saved segment to run instead of ad-hoc filters. `.catch(undefined)` and
+  // not `.optional()` alone: a stale or hand-typed id in a bookmarked URL has
+  // to fall back to the unfiltered list, not render an error boundary.
+  segmentId: z.string().cuid().optional().catch(undefined),
   ownerId: z.string().cuid().optional(),
   q: z.string().trim().max(200).optional(),
   sort: z.enum(LEAD_SORTS).catch("createdAt"),

@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/ingestion",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sequences",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { buildDedupeKey, normalizePhone } from "@/lib/dedupe";
 import { leadListFilterSchema } from "@/lib/validation/crm";
+import { segmentWhereById } from "@/server/services/segments";
 import { type Ctx, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
@@ -284,7 +285,30 @@ async function pickOwnerRoundRobin(
 export async function listLeads(ctx: Ctx, rawFilter: unknown) {
   const filter = leadListFilterSchema.parse(rawFilter);
 
+  // A segment is composed with AND, never spread: its clause already carries
+  // the tenant and visibility scope, and spreading would let its keys collide
+  // with the ones below.
+  let segmentWhere: Record<string, unknown> | null = null;
+  if (filter.segmentId) {
+    const resolved = await segmentWhereById(ctx, filter.segmentId, "LEAD");
+    if (!resolved.ok) {
+      // Deliberately empty rather than falling through to the unfiltered list.
+      // Someone who asked for "stale enterprise leads" and is shown all 4,000
+      // has been told something false; an empty list with the reason on it has
+      // not.
+      return {
+        rows: [],
+        total: 0,
+        page: filter.page,
+        perPage: filter.perPage,
+        segmentError: resolved.error,
+      };
+    }
+    segmentWhere = resolved.data;
+  }
+
   const where = {
+    ...(segmentWhere ? { AND: [segmentWhere] } : {}),
     organizationId: ctx.organizationId,
     deletedAt: null,
     ...(filter.status ? { status: filter.status } : {}),
@@ -351,7 +375,7 @@ export async function listLeads(ctx: Ctx, rawFilter: unknown) {
     ageMinutes: Math.floor((Date.now() - lead.createdAt.getTime()) / 60_000),
   }));
 
-  return { rows: withAge, total, page: filter.page, perPage: filter.perPage };
+  return { rows: withAge, total, page: filter.page, perPage: filter.perPage, segmentError: null };
 }
 
 /**

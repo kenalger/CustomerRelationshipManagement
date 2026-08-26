@@ -10,7 +10,9 @@ import { db } from "@/lib/db";
 import { requireCtx } from "@/server/context";
 import { listLeads } from "@/server/services/leads";
 import { slaSnapshot } from "@/server/services/sla";
+import { listSegments } from "@/server/services/segments";
 import { LeadsTable } from "./leads-table";
+import { SegmentBar } from "./segment-bar";
 
 export const metadata = { title: "Leads · CRM" };
 
@@ -28,13 +30,15 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   const sp = await searchParams;
   const status = typeof sp.status === "string" ? sp.status : "";
   const q = typeof sp.q === "string" ? sp.q : "";
+  const segmentId = typeof sp.segment === "string" ? sp.segment : "";
   const sort = typeof sp.sort === "string" ? sp.sort : "createdAt";
   const dir = sp.dir === "asc" ? "asc" : "desc";
 
-  const [{ rows, total, page, perPage }, sla, team] = await Promise.all([
+  const [{ rows, total, page, perPage, segmentError }, sla, team, segments] = await Promise.all([
     listLeads(ctx, {
       status: status || undefined,
       q: q || undefined,
+      segmentId: segmentId || undefined,
       sort,
       dir,
       page: typeof sp.page === "string" ? sp.page : 1,
@@ -45,6 +49,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       select: { id: true, name: true, email: true },
       orderBy: { email: "asc" },
     }),
+    listSegments(ctx, "LEAD"),
   ]);
 
   return (
@@ -94,6 +99,22 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
             />
           </form>
         </div>
+
+        <SegmentBar
+          segments={segments}
+          activeId={segmentId || null}
+          currentUserId={ctx.userId}
+          canWrite={ctx.role !== "READ_ONLY"}
+        />
+
+        {segmentError ? (
+          <p
+            role="status"
+            className="rounded-lg border border-warning/25 bg-warning-muted px-3 py-2 text-[12px] text-warning"
+          >
+            {segmentError}
+          </p>
+        ) : null}
 
         {sla.breaching > 0 ? (
           <p

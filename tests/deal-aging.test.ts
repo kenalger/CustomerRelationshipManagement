@@ -129,6 +129,27 @@ describe("derived activity recency", () => {
     expect(contact.lastActivityAt).not.toBeNull();
   });
 
+  it("advances on a lead too, so a lead queue can be filtered on staleness", async () => {
+    const lead = await db.lead.create({
+      data: {
+        organizationId: org.org.id,
+        source: "WEB_FORM",
+        status: "NEW",
+        firstName: "Recency",
+        email: "recency-lead@test.local",
+        dedupeKey: `recency-lead-${org.org.id}`,
+      },
+      select: { id: true, lastActivityAt: true },
+    });
+    expect(lead.lastActivityAt).toBeNull();
+
+    const result = await logActivity(org.ctx, { type: "CALL", subject: "Dial", leadId: lead.id });
+    expect(result.ok).toBe(true);
+
+    const after = await db.lead.findUniqueOrThrow({ where: { id: lead.id } });
+    expect(after.lastActivityAt).not.toBeNull();
+  });
+
   it("never moves backwards when an older activity is backdated in", async () => {
     const before = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
 
