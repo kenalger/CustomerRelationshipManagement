@@ -180,6 +180,8 @@ model Organization {
   sequenceSteps    SequenceStep[]
   enrollments      Enrollment[]
   suppressions     Suppression[]
+  automations      Automation[]
+  automationRuns   AutomationRun[]
   targets          Target[]
 }
 
@@ -212,6 +214,7 @@ model User {
   prospectLists   ProspectList[]
   campaigns       Campaign[]
   suppressions    Suppression[]
+  automations     Automation[]
   targets         Target[]        @relation("TargetOwner")
   targetsSet      Target[]        @relation("TargetAuthor")
 
@@ -1109,4 +1112,127 @@ model Target {
   @@unique([organizationId, userId, metric, period, periodStart])
   @@index([organizationId, periodStart])
   @@index([organizationId, userId, periodStart])
+}
+
+// ═══════════════════════════ automation ═══════════════════════════
+
+/**
+ * What starts an automation.
+ *
+ * `LEAD_CREATED` and `LEAD_STATUS_CHANGED` are separate on purpose. A status
+ * set while the lead is being created fires only the first: an engine where
+ * "updated" also fires on creation double-fires every rule on every new
+ * record, which Attio's block library documents as its own sharpest edge.
+ */
+enum AutomationTrigger {
+  LEAD_CREATED
+  LEAD_STATUS_CHANGED
+  DEAL_STAGE_CHANGED
+  TASK_COMPLETED
+  SCHEDULE_DAILY
+}
+
+enum AutomationAction {
+  ASSIGN_OWNER
+  SET_FIELD
+  ADD_TAG
+  CREATE_TASK
+  NOTIFY
+}
+
+enum AutomationRunStatus {
+  SUCCEEDED
+  /// Conditions were evaluated and the record did not match. Not a failure —
+  /// and worth recording, because "why did my rule not fire" is the question
+  /// this table exists to answer.
+  SKIPPED
+  FAILED
+}
+
+model Automation {
+  id             String            @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  /// Draft until someone with the authority turns it on. Writing a rule and
+  /// turning it loose on live records are different acts with different blast
+  /// radii, so they are different permissions.
+  enabled        Boolean           @default(false)
+  trigger        AutomationTrigger
+
+  /**
+   * The same filter document a Segment uses, aimed at one record.
+   *
+   * Deliberately not a second condition language. `lib/validation/segments.ts`
+   * already has a closed, `.strict()`, injection-safe vocabulary that
+   * translates to a Prisma `where`; reusing it means one language to learn and
+   * no way for the two to disagree about what "no activity in 21 days" means.
+   */
+  conditions Json?
+
+  /// A runaway rule should stop and say so rather than write 40,000 rows.
+  dailyRunLimit Int      @default(500)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  steps        AutomationStep[]
+  runs         AutomationRun[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, trigger, enabled])
+}
+
+model AutomationStep {
+  id           String           @id @default(cuid())
+  automationId String
+  position     Int
+  action       AutomationAction
+  /// Action-specific settings, validated per action before anything is saved.
+  config       Json
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, position])
+}
+
+/**
+ * One record's pass through one automation.
+ *
+ * Kept even when nothing happened, because an automation nobody can audit is
+ * one nobody will trust with their pipeline, and "it did not fire" needs an
+ * answer as much as "it fired wrongly" does.
+ */
+model AutomationRun {
+  id             String              @id @default(cuid())
+  organizationId String
+  automationId   String
+  /// The record this run was about. Not a foreign key: a run outlives the
+  /// record it touched, and a deleted lead must not erase the evidence of
+  /// what an automation did to it.
+  recordKind     String
+  recordId       String
+  /**
+   * Identifies the event that caused this run.
+   *
+   * The unique index below is the loop guard: one record runs a given
+   * automation at most once per triggering event, whatever re-enters the
+   * dispatcher.
+   */
+  triggerEventId String
+  status         AutomationRunStatus
+  error          String?             @db.Text
+  /// What each step did, in order — the readable half of the audit.
+  log            Json?
+  startedAt      DateTime            @default(now())
+  finishedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automation   Automation   @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, recordId, triggerEventId])
+  @@index([organizationId, startedAt])
+  @@index([automationId, startedAt])
 }

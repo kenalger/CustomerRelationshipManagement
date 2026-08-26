@@ -1,5 +1,8 @@
 import { db } from "@/lib/db";
 import { dealCreateSchema, dealListFilterSchema, dealUpdateSchema } from "@/lib/validation/crm";
+import { randomUUID } from "node:crypto";
+
+import { fireAutomation } from "@/server/services/automation-bus";
 import { type Ctx, requireWrite, seesAllRecords, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
@@ -179,6 +182,7 @@ export async function createDeal(ctx: Ctx, raw: unknown): Promise<Result<{ id: s
  * activity in the same transaction — a pipeline you cannot explain after the
  * fact is a pipeline nobody trusts.
  */
+
 export async function moveDealToStage(
   ctx: Ctx,
   dealId: string,
@@ -244,6 +248,17 @@ export async function moveDealToStage(
       before: { stageId: deal.stageId, stageName: deal.stage.name },
       after: { stageId, stageName: stage.name, lostReason: stage.isLost ? reason : null },
     });
+  });
+
+
+  await fireAutomation({
+    organizationId: ctx.organizationId,
+    trigger: "DEAL_STAGE_CHANGED",
+    recordKind: "DEAL",
+    recordId: dealId,
+    // A stage move has no event row of its own, so the occurrence is minted
+    // here. Two moves of the same deal are two events, which is correct.
+    triggerEventId: randomUUID(),
   });
 
   return ok({ id: dealId });

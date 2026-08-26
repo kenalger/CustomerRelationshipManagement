@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { buildDedupeKey, normalizePhone } from "@/lib/dedupe";
 import { leadListFilterSchema } from "@/lib/validation/crm";
 import { segmentWhereById } from "@/server/services/segments";
+import { fireAutomation } from "@/server/services/automation-bus";
 import { type Ctx, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
 import { writeAudit } from "@/server/services/audit";
@@ -248,12 +249,30 @@ export async function failIngestionEvent(
  * One-phase ingestion, for sources whose payload already carries the lead
  * (email, CSV, web forms). Facebook uses the two-phase pair above.
  */
+
 export async function ingestLead(input: IngestInput): Promise<IngestOutcome> {
   const recorded = await recordIngestionEvent(input);
   if (recorded.kind === "replayed") {
     return { kind: "replayed", leadId: recorded.leadId };
   }
-  return materializeLead(recorded.eventId, input.normalized, input.source);
+  const outcome = await materializeLead(recorded.eventId, input.normalized, input.source);
+
+  // Only a genuinely new lead. A duplicate folded into an existing record is
+  // not a new lead arriving, and firing on it would run the welcome rule twice
+  // for the same person.
+  if (outcome.kind === "created") {
+    await fireAutomation({
+      organizationId: input.organizationId,
+      trigger: "LEAD_CREATED",
+      recordKind: "LEAD",
+      recordId: outcome.leadId,
+      // The ingestion event is the occurrence, so a replayed webhook that
+      // somehow reached here twice claims the same run rather than a second.
+      triggerEventId: recorded.eventId,
+    });
+  }
+
+  return outcome;
 }
 
 /**

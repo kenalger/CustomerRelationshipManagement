@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import { fireAutomation } from "@/server/services/automation-bus";
 import { db } from "@/lib/db";
 import { taskCreateSchema, taskListFilterSchema } from "@/lib/validation/tasks";
 import { type Ctx, assignedTo, requireWrite, visibleTo } from "@/server/authz";
@@ -235,6 +238,7 @@ export async function createTask(ctx: Ctx, raw: unknown): Promise<Result<{ id: s
   return ok({ id: task.id });
 }
 
+
 export async function setTaskDone(
   ctx: Ctx,
   taskId: string,
@@ -247,6 +251,18 @@ export async function setTaskDone(
     data: { completedAt: done ? new Date() : null },
   });
   if (updated.count === 0) return err("Task not found");
+
+  // Completing fires; reopening does not. "When a task is completed" is the
+  // rule people write, and firing it on un-tick would run the follow-up twice.
+  if (done) {
+    await fireAutomation({
+      organizationId: ctx.organizationId,
+      trigger: "TASK_COMPLETED",
+      recordKind: "TASK",
+      recordId: taskId,
+      triggerEventId: randomUUID(),
+    });
+  }
 
   return ok({ id: taskId });
 }

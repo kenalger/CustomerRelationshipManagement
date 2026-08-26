@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import { fireAutomation } from "@/server/services/automation-bus";
 import { db } from "@/lib/db";
 import { type Ctx, requireDelete, requireWrite, visibleTo } from "@/server/authz";
 import { type Result, err, ok } from "@/server/result";
@@ -108,14 +111,21 @@ export async function bulkSetLeadStatus(
   const ids = guard(leadIds);
   if (!ids.ok) return ids;
 
-  const updated = await db.$transaction(async (tx) => {
+  const changed = await db.$transaction(async (tx) => {
+    const scope = {
+      id: { in: ids.data },
+      organizationId: ctx.organizationId,
+      deletedAt: null,
+      ...visibleTo(ctx),
+    };
+
+    // Which ids are actually in scope, captured BEFORE the write: updateMany
+    // returns a count, and an automation has to be raised per lead. Reading
+    // afterwards would also match leads that were already in this status.
+    const affected = await tx.lead.findMany({ where: scope, select: { id: true } });
+
     const result = await tx.lead.updateMany({
-      where: {
-        id: { in: ids.data },
-        organizationId: ctx.organizationId,
-        deletedAt: null,
-        ...visibleTo(ctx),
-      },
+      where: scope,
       data: {
         status,
         // Marking a lead junk or working IS the first touch — it stops the SLA
@@ -129,10 +139,31 @@ export async function bulkSetLeadStatus(
       action: "bulk_status",
       after: { count: result.count, status },
     });
-    return result.count;
+    return affected.map((lead) => lead.id);
   });
 
-  return ok({ succeeded: updated, failed: ids.data.length - updated, errors: [] });
+  /*
+   * One event per lead, sequentially, after the transaction has committed.
+   *
+   * Sequential because each run opens transactions of its own and this pg
+   * adapter cannot interleave them. Failures are swallowed per lead: a broken
+   * rule must not turn a successful bulk update into a reported failure.
+   */
+  for (const leadId of changed) {
+    await fireAutomation({
+      organizationId: ctx.organizationId,
+      trigger: "LEAD_STATUS_CHANGED",
+      recordKind: "LEAD",
+      recordId: leadId,
+      triggerEventId: randomUUID(),
+    });
+  }
+
+  return ok({
+    succeeded: changed.length,
+    failed: ids.data.length - changed.length,
+    errors: [],
+  });
 }
 
 export async function bulkAssignContacts(
