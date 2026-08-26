@@ -1088,8 +1088,19 @@ model Target {
   user         User?        @relation("TargetOwner", fields: [userId], references: [id], onDelete: Cascade)
   createdBy    User?        @relation("TargetAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
-  // One target per person per metric per period. A team target (userId null)
-  // coexists with the per-person ones rather than competing with them.
+  /*
+   * One target per person per metric per period. A team target (userId null)
+   * coexists with the per-person ones rather than competing with them.
+   *
+   * IMPORTANT: this index is recreated by hand as NULLS NOT DISTINCT in
+   * `migrations/20260826054809_target_team_uniqueness`. Postgres treats NULLs
+   * as distinct by default, so as Prisma generates it this constraint does NOT
+   * constrain team targets at all — two identical rows both insert, and an
+   * upsert keyed on it can never match the existing one. Verified against a
+   * real database, not assumed. Prisma's schema language cannot express
+   * NULLS NOT DISTINCT; if this index is ever regenerated, that migration must
+   * be re-applied.
+   */
   @@unique([organizationId, userId, metric, periodStart])
   @@index([organizationId, periodStart])
   @@index([organizationId, userId, periodStart])
