@@ -107,7 +107,7 @@ export default async function ContactDetailPage({ params }: PageProps<"/contacts
                 </dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 py-1.5">
-                <dt className="shrink-0 text-[12px] text-muted">Owner</dt>
+                <dt className="shrink-0 text-[12px] text-muted">Sales rep</dt>
                 <dd className="min-w-0 truncate text-right text-[12px]">
                   {contact.owner?.name ?? contact.owner?.email ?? <span className="text-muted">—</span>}
                 </dd>

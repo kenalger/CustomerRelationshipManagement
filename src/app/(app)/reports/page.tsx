@@ -613,11 +613,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
           </TableShell>
         </Panel>
 
-        <Panel title="By owner" description="Volume and follow-through per person" bodyClassName="p-0">
-          <TableShell caption="Performance by owner">
+        <Panel title="By sales rep" description="Volume and follow-through per person" bodyClassName="p-0">
+          <TableShell caption="Performance by sales rep">
             <thead>
               <tr>
-                <Th>Owner</Th>
+                <Th>Sales rep</Th>
                 <Th align="right">Leads</Th>
                 <Th align="right">Untouched</Th>
                 <Th align="right">Converted</Th>

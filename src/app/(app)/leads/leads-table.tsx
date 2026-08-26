@@ -147,7 +147,7 @@ export function LeadsTable({
             <SortableTh column="status" activeSort={sort} activeDir={dir} basePath="/leads" params={carried}>
               Status
             </SortableTh>
-            <Th>Owner</Th>
+            <Th>Sales rep</Th>
             <SortableTh column="score" activeSort={sort} activeDir={dir} basePath="/leads" params={carried} align="right">
               Score
             </SortableTh>

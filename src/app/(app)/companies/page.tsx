@@ -80,7 +80,7 @@ export default async function CompaniesPage({ searchParams }: PageProps<"/compan
                 <Th>Industry</Th>
                 <Th align="right">People</Th>
                 <Th align="right">Deals</Th>
-                <Th>Owner</Th>
+                <Th>Sales rep</Th>
               </tr>
             </thead>
             <tbody>

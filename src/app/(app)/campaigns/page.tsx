@@ -101,7 +101,7 @@ export default async function CampaignsPage({ searchParams }: PageProps<"/campai
               <tr>
                 <Th>Campaign</Th>
                 <Th>Status</Th>
-                <Th>Owner</Th>
+                <Th>Run by</Th>
                 <Th align="right">Steps</Th>
                 <Th align="right">Enrolled</Th>
                 <Th align="right">Still moving</Th>

@@ -121,7 +121,7 @@ export function CampaignDetails({
         <div className="flex flex-wrap items-center gap-2.5">
           <Badge tone={statusTone}>{statusLabel}</Badge>
           <span className="text-[13px] text-secondary">
-            Owned by {ownerName ?? "someone who has left"}
+            Run by {ownerName ?? "someone who has left"}
           </span>
           {startedAt ? (
             <span className="text-[13px] text-muted">· Started {DATE.format(startedAt)}</span>

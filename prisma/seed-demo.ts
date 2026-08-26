@@ -32,6 +32,11 @@ async function main() {
     where: { organizationId: org.id, email: "owner@acme.test" },
   });
 
+  // The base seed names this account "Acme Owner" after its ROLE. Now that the
+  // record-ownership column is labelled "Sales rep", that read as
+  // "Sales rep: Acme Owner". A person on a sales floor has a name.
+  await db.user.update({ where: { id: owner.id }, data: { name: "Elena Marquez" } });
+
   // ─────────────────────────── workspace settings ───────────────────────────
   // Every field on Settings → General filled, so the page shows what it is for
   // rather than a column of placeholders.

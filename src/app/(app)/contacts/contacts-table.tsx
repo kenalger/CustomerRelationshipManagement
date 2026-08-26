@@ -69,7 +69,7 @@ export function ContactsTable({
               Email
             </SortableTh>
             <Th>Phone</Th>
-            <Th>Owner</Th>
+            <Th>Sales rep</Th>
           </tr>
         </thead>
         <tbody>

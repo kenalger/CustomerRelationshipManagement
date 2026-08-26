@@ -231,7 +231,7 @@ export function OrganizationForm({
 
         <div className="grid gap-4 border-t border-border-subtle pt-4 sm:grid-cols-2">
           <Field
-            label="Nudge the owner after"
+            label="Nudge the sales rep after"
             htmlFor="slaFirstTouchMinutes"
             hint={hoursOn ? "Working minutes." : "Minutes, wall clock."}
             error={state.fieldErrors?.slaFirstTouchMinutes}

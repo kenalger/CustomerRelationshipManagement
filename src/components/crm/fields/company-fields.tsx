@@ -19,7 +19,7 @@ export function CompanyFields({ company, canEdit }: { company: Company; canEdit:
       <EditableField entity="company" id={company.id} field="phone" label="Phone" type="tel" display="tel" value={company.phone} canEdit={canEdit} />
       <EditableField entity="company" id={company.id} field="website" label="Website" type="url" display="url" value={company.website} canEdit={canEdit} />
       <div className="flex items-baseline justify-between gap-4 py-1.5">
-        <dt className="shrink-0 text-[12px] text-muted">Owner</dt>
+        <dt className="shrink-0 text-[12px] text-muted">Sales rep</dt>
         <dd className="min-w-0 truncate text-right text-[12px]">
           {company.owner?.name ?? company.owner?.email ?? <span className="text-muted">—</span>}
         </dd>
