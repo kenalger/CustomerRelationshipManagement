@@ -16,6 +16,23 @@ import {
 } from "@/server/services/settings";
 import { dropOrg, makeOrg } from "./factories";
 
+/**
+ * `updateOrganization` takes the WHOLE settings document, not a patch. A
+ * partial save would silently reset whatever it omitted, so requiring every
+ * field turns that into a type error instead of data loss.
+ */
+const FULL = {
+  name: "Renamed Co",
+  timezone: "UTC",
+  businessHoursEnabled: false,
+  businessDays: [1, 2, 3, 4, 5],
+  businessStartMinute: 540,
+  businessEndMinute: 1020,
+  rawPayloadRetentionDays: 30,
+  slaFirstTouchMinutes: 30,
+  slaEscalateMinutes: 120,
+};
+
 describe("organization settings", () => {
   let org: Awaited<ReturnType<typeof makeOrg>>;
 
@@ -28,7 +45,7 @@ describe("organization settings", () => {
 
   it("saves a new SLA policy", async () => {
     const result = await updateOrganization(org.ctx, {
-      name: "Renamed Co",
+      ...FULL,
       slaFirstTouchMinutes: 15,
       slaEscalateMinutes: 60,
     });
@@ -42,7 +59,7 @@ describe("organization settings", () => {
   it("refuses an escalation window at or before the first-touch target", async () => {
     // Both stages would fire on the same sweep, so the nudge is never seen alone.
     const equal = await updateOrganization(org.ctx, {
-      name: "Renamed Co",
+      ...FULL,
       slaFirstTouchMinutes: 30,
       slaEscalateMinutes: 30,
     });
@@ -50,7 +67,7 @@ describe("organization settings", () => {
     if (!equal.ok) expect(equal.error).toMatch(/after the first-touch/i);
 
     const inverted = await updateOrganization(org.ctx, {
-      name: "Renamed Co",
+      ...FULL,
       slaFirstTouchMinutes: 120,
       slaEscalateMinutes: 30,
     });
@@ -59,7 +76,7 @@ describe("organization settings", () => {
 
   it("rejects a nonsensical target", async () => {
     const zero = await updateOrganization(org.ctx, {
-      name: "Renamed Co",
+      ...FULL,
       slaFirstTouchMinutes: 0,
       slaEscalateMinutes: 60,
     });
@@ -69,11 +86,7 @@ describe("organization settings", () => {
   it("a MANAGER cannot change org settings", async () => {
     const manager = { ...org.ctx, role: "MANAGER" as const };
     await expect(
-      updateOrganization(manager, {
-        name: "Hijacked",
-        slaFirstTouchMinutes: 5,
-        slaEscalateMinutes: 10,
-      }),
+      updateOrganization(manager, { ...FULL, name: "Hijacked" }),
     ).rejects.toThrow(/permission/i);
   });
 });
@@ -268,5 +281,82 @@ describe("pipeline administration", () => {
       expect(result.ok).toBe(false);
       expect(await db.stage.count({ where: { id: stage.id } })).toBe(1);
     });
+  });
+});
+
+describe("time, hours and retention settings", () => {
+  let org: Awaited<ReturnType<typeof makeOrg>>;
+
+  beforeAll(async () => {
+    org = await makeOrg();
+  });
+  afterAll(async () => {
+    await dropOrg(org.org.id);
+  });
+
+  const base = {
+    name: "Acme",
+    timezone: "Asia/Manila",
+    businessHoursEnabled: true,
+    businessDays: [1, 2, 3, 4, 5],
+    businessStartMinute: 540,
+    businessEndMinute: 1020,
+    rawPayloadRetentionDays: 30,
+    slaFirstTouchMinutes: 30,
+    slaEscalateMinutes: 120,
+  };
+
+  it("saves a full time and retention policy", async () => {
+    const result = await updateOrganization(org.ctx, base);
+    expect(result.ok).toBe(true);
+
+    const saved = await getOrganization(org.ctx);
+    expect(saved.timezone).toBe("Asia/Manila");
+    expect(saved.businessDays).toEqual([1, 2, 3, 4, 5]);
+    expect(saved.rawPayloadRetentionDays).toBe(30);
+  });
+
+  it("rejects a timezone the runtime does not know", async () => {
+    // Validated against the platform's own tz database, so the list in the UI
+    // and the rule on the server cannot drift apart.
+    const result = await updateOrganization(org.ctx, { ...base, timezone: "Mars/Olympus" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a working day that ends before it starts", async () => {
+    const result = await updateOrganization(org.ctx, {
+      ...base,
+      businessStartMinute: 1020,
+      businessEndMinute: 540,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/highlighted|end after/i);
+  });
+
+  it("rejects business hours with no working days", async () => {
+    const result = await updateOrganization(org.ctx, { ...base, businessDays: [] });
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows no working days when business hours are off", async () => {
+    // The constraint only matters while the feature is on.
+    const result = await updateOrganization(org.ctx, {
+      ...base,
+      businessHoursEnabled: false,
+      businessDays: [],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("bounds the retention window", async () => {
+    for (const days of [0, 400]) {
+      const result = await updateOrganization(org.ctx, { ...base, rawPayloadRetentionDays: days });
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  it("a MANAGER still cannot change any of it", async () => {
+    const manager = { ...org.ctx, role: "MANAGER" as const };
+    await expect(updateOrganization(manager, base)).rejects.toThrow(/permission/i);
   });
 });

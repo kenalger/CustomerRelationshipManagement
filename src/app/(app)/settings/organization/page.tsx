@@ -15,13 +15,22 @@ export default async function OrganizationSettingsPage() {
     <div className="mx-auto w-full max-w-3xl space-y-6 p-8">
         <SectionHeader
           title="Organization"
-          description="Workspace name and the speed-to-lead policy the sweeper enforces."
+          description="Everything that applies to the whole workspace — identity, working hours, and how long raw lead data is kept."
         />
 
         {canManage ? (
           <OrganizationForm
+            slug={org.slug}
             defaults={{
               name: org.name,
+              industry: org.industry,
+              website: org.website,
+              timezone: org.timezone,
+              businessHoursEnabled: org.businessHoursEnabled,
+              businessDays: org.businessDays,
+              businessStartMinute: org.businessStartMinute,
+              businessEndMinute: org.businessEndMinute,
+              rawPayloadRetentionDays: org.rawPayloadRetentionDays,
               slaFirstTouchMinutes: org.slaFirstTouchMinutes,
               slaEscalateMinutes: org.slaEscalateMinutes,
             }}

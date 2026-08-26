@@ -1,20 +1,8 @@
 import type { CSSProperties } from "react";
 
+import { hueFor, initialsFor } from "@/lib/hue";
 import { cn } from "@/lib/utils";
 
-/** Deterministic hue per person, so the same rep is the same colour everywhere. */
-function hueFor(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return hash;
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 export function Avatar({
   name,
@@ -51,7 +39,7 @@ export function Avatar({
         className,
       )}
     >
-      {initials(label)}
+      {initialsFor(label)}
     </span>
   );
 }

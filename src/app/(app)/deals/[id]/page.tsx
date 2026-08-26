@@ -2,11 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
-import { AddTaskForm } from "@/components/crm/add-task-form";
 import { EditableField } from "@/components/crm/editable-field";
 import { TaskList } from "@/components/crm/task-list";
 import { Panel } from "@/components/ui/panel";
-import { LogActivityForm } from "@/components/crm/log-activity-form";
+import { RecordComposer } from "@/components/crm/record-composer";
 import { PageHeader } from "@/components/page-header";
 import { formatMoney } from "@/lib/money";
 import { requireCtx } from "@/server/context";
@@ -150,11 +149,10 @@ export default async function DealDetailPage({ params }: PageProps<"/deals/[id]"
                 </span>
               </h2>
             </header>
-            <TaskList tasks={tasks} emptyHint="No follow-ups yet." />
-            {canEdit ? <AddTaskForm link={{ dealId: deal.id }} /> : null}
+            <TaskList tasks={tasks} emptyHint="No follow-ups yet — add one from the composer below." />
           </section>
 
-          <LogActivityForm link={{ dealId: deal.id }} />
+          <RecordComposer link={{ dealId: deal.id }} canWrite={canEdit} />
           <Panel title="Activity">
             <ActivityTimeline activities={activities} />
           </Panel>

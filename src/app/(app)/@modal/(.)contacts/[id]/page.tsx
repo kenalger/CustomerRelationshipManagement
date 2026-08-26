@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AddTaskForm } from "@/components/crm/add-task-form";
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
 import { ContactFields } from "@/components/crm/fields/contact-fields";
-import { LogActivityForm } from "@/components/crm/log-activity-form";
+import { RecordComposer } from "@/components/crm/record-composer";
 import { TaskList } from "@/components/crm/task-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,18 +80,15 @@ export default async function ContactModal({ params }: PageProps<"/contacts/[id]
             </span>
           </h3>
           <div className="rounded-lg bg-sunken">
-            <TaskList tasks={tasks} emptyHint="No follow-ups yet." />
-            {canEdit ? <AddTaskForm link={{ contactId: contact.id }} /> : null}
+            <TaskList tasks={tasks} emptyHint="No follow-ups yet — add one from the composer below." />
           </div>
         </section>
 
         <section>
           <h3 className="t-heading mb-2">Activity</h3>
-          {canEdit ? (
-            <div className="mb-3">
-              <LogActivityForm link={{ contactId: contact.id }} />
-            </div>
-          ) : null}
+          <div className="mb-3">
+            <RecordComposer link={{ contactId: contact.id }} canWrite={canEdit} />
+          </div>
           <ActivityTimeline activities={activities} />
         </section>
       </div>

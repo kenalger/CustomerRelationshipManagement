@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
 import { CompanyFields } from "@/components/crm/fields/company-fields";
-import { LogActivityForm } from "@/components/crm/log-activity-form";
+import { RecordComposer } from "@/components/crm/record-composer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -79,11 +79,9 @@ export default async function CompanyModal({ params }: PageProps<"/companies/[id
 
         <section>
           <h3 className="t-heading mb-2">Activity</h3>
-          {canEdit ? (
-            <div className="mb-3">
-              <LogActivityForm link={{ companyId: company.id }} />
-            </div>
-          ) : null}
+          <div className="mb-3">
+            <RecordComposer link={{ companyId: company.id }} canWrite={canEdit} />
+          </div>
           <ActivityTimeline activities={activities} />
         </section>
       </div>

@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   Building2,
   CheckSquare,
@@ -10,7 +11,7 @@ import {
 
 import { CommandHint, CommandPalette } from "@/components/command-palette";
 import { NavLink } from "@/components/nav-link";
-import { AccountMenu } from "@/components/account-menu";
+import { WorkspaceTile } from "@/components/workspace-tile";
 import { db } from "@/lib/db";
 import { requireCtx } from "@/server/context";
 import { unreadCount } from "@/server/services/notifications";
@@ -24,9 +25,8 @@ export default async function AppLayout({
 }: LayoutProps<"/"> & { modal: React.ReactNode }) {
   const ctx = await requireCtx();
 
-  const [org, user, unread, overdue] = await Promise.all([
+  const [org, unread, overdue] = await Promise.all([
     db.organization.findUnique({ where: { id: ctx.organizationId }, select: { name: true } }),
-    db.user.findUnique({ where: { id: ctx.userId }, select: { name: true, email: true } }),
     unreadCount(ctx),
     countOverdue(ctx),
   ]);
@@ -39,11 +39,22 @@ export default async function AppLayout({
           which is where every comparable product puts it; Notion keeps it in
           the sidebar and copying that hid it somewhere nobody looks.
         */}
-        <div className="flex h-[var(--header-h)] items-center gap-2 px-4">
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-[var(--tag-gray-bg)] text-[12px] font-semibold text-[var(--tag-gray-fg)]">
-            {(org?.name ?? "W").charAt(0).toUpperCase()}
-          </span>
-          <p className="min-w-0 truncate text-[14px] font-[590]">{org?.name ?? "Workspace"}</p>
+        {/*
+          Sits in the same band as the page bar so the two line up across the
+          divider, instead of the sidebar's identity floating at its own
+          height. The tile is coloured from the organisation's name — a flat
+          grey square looks identical for every customer.
+        */}
+        <div className="flex min-h-[var(--header-h)] items-center gap-2.5 border-b border-border-subtle px-4 py-3">
+          <WorkspaceTile name={org?.name ?? "Workspace"} size={30} />
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-[590] leading-5">
+              {org?.name ?? "Workspace"}
+            </p>
+            <p className="truncate text-[12px] leading-4 text-muted">
+              {ctx.role.replace("_", " ").toLowerCase()}
+            </p>
+          </div>
         </div>
 
         <div className="px-2 pb-1 pt-2">
@@ -74,21 +85,13 @@ export default async function AppLayout({
           <NavLink href="/companies" icon={<Building2 {...ICON} />}>
             Companies
           </NavLink>
+
+          <p className="t-caps px-2.5 pb-1 pt-5 text-muted">Insight</p>
+          <NavLink href="/reports" icon={<BarChart3 {...ICON} />}>
+            Reports
+          </NavLink>
         </nav>
       </aside>
-
-      {/*
-        Pinned into the same 52px band as each page's header, so it reads as one
-        app bar: title on the left, page actions, account on the far right.
-        Page headers reserve room for it with their right padding.
-      */}
-      <div className="fixed right-0 top-0 z-30 flex h-[var(--header-h)] items-center pr-6">
-        <AccountMenu
-          userName={user?.name ?? null}
-          userEmail={user?.email ?? ""}
-          role={ctx.role}
-        />
-      </div>
 
       <main className="min-w-0 flex-1 bg-page">{children}</main>
 

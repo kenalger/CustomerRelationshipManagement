@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
-import { AddTaskForm } from "@/components/crm/add-task-form";
 import { EditableField } from "@/components/crm/editable-field";
 import { TaskList } from "@/components/crm/task-list";
+import { TagPicker } from "@/components/crm/tag-picker";
 import { Panel } from "@/components/ui/panel";
-import { LogActivityForm } from "@/components/crm/log-activity-form";
+import { RecordComposer } from "@/components/crm/record-composer";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { formatMoney } from "@/lib/money";
@@ -14,6 +14,7 @@ import { requireCtx } from "@/server/context";
 import { listActivities } from "@/server/services/activities";
 import { listTasksFor } from "@/server/services/tasks";
 import { getContact } from "@/server/services/contacts";
+import { listTags, tagsFor } from "@/server/services/tags";
 
 export default async function ContactDetailPage({ params }: PageProps<"/contacts/[id]">) {
   const ctx = await requireCtx();
@@ -23,9 +24,11 @@ export default async function ContactDetailPage({ params }: PageProps<"/contacts
   const contact = await getContact(ctx, id);
   if (!contact) notFound();
 
-  const [activities, tasks] = await Promise.all([
+  const [activities, tasks, tags, allTags] = await Promise.all([
     listActivities(ctx, { contactId: contact.id }),
     listTasksFor(ctx, { contactId: contact.id }),
+    tagsFor(ctx, { contactId: contact.id }),
+    listTags(ctx),
   ]);
   const canEdit = ctx.role !== "READ_ONLY";
   const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
@@ -36,6 +39,15 @@ export default async function ContactDetailPage({ params }: PageProps<"/contacts
 
       <div className="grid gap-4 p-6 lg:grid-cols-[20rem_1fr]">
         <div className="space-y-4">
+          <Panel title="Tags">
+            <TagPicker
+              target={{ contactId: contact.id }}
+              tags={tags}
+              all={allTags}
+              canEdit={canEdit}
+            />
+          </Panel>
+
           <Panel title="Details">
             <dl className="divide-y divide-border-subtle">
               <EditableField
@@ -136,11 +148,10 @@ export default async function ContactDetailPage({ params }: PageProps<"/contacts
                 </span>
               </h2>
             </header>
-            <TaskList tasks={tasks} emptyHint="No follow-ups yet." />
-            {canEdit ? <AddTaskForm link={{ contactId: contact.id }} /> : null}
+            <TaskList tasks={tasks} emptyHint="No follow-ups yet — add one from the composer below." />
           </section>
 
-          <LogActivityForm link={{ contactId: contact.id }} />
+          <RecordComposer link={{ contactId: contact.id }} canWrite={canEdit} />
           <Panel title="Activity">
             <ActivityTimeline activities={activities} />
           </Panel>

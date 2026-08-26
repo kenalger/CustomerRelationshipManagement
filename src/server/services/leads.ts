@@ -314,7 +314,9 @@ export async function listLeads(ctx: Ctx, rawFilter: unknown) {
             ? { source: filter.dir }
             : filter.sort === "companyName"
               ? { companyName: filter.dir }
-              : { createdAt: filter.dir },
+              : filter.sort === "score"
+                ? { score: filter.dir }
+                : { createdAt: filter.dir },
         { id: "asc" },
       ],
       skip: (filter.page - 1) * filter.perPage,
@@ -328,6 +330,12 @@ export async function listLeads(ctx: Ctx, rawFilter: unknown) {
         companyName: true,
         source: true,
         status: true,
+        score: true,
+        // Not decoration: `score` defaults to 0, so a lead nobody has scored
+        // yet is indistinguishable from one scored as worthless. `scoredAt`
+        // is the only thing that separates them, and the column shows a dash
+        // rather than a 0 when it is null.
+        scoredAt: true,
         createdAt: true,
         firstTouchedAt: true,
         owner: { select: { id: true, name: true, email: true } },

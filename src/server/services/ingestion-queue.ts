@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { processLeadgenEvent } from "@/server/integrations/facebook/process";
 import { MAX_INGESTION_ATTEMPTS } from "@/server/services/leads";
@@ -58,6 +59,44 @@ export async function sweepPendingIngestion(
   }
 
   return results;
+}
+
+/**
+ * Prunes raw provider payloads past their retention window.
+ *
+ * Only the payload body goes. The IngestionEvent row survives with a
+ * `payloadPrunedAt` stamp, so the record of what arrived and when — the audit
+ * trail — outlives the personal data inside it. The Lead, Contact and Deal
+ * produced from it are never touched.
+ *
+ * ADR 0002 names unbounded payload growth as the main threat to the database
+ * tier, and this is also customers' personal data held on their behalf.
+ */
+export async function prunePayloads(limit = 500) {
+  const orgs = await db.organization.findMany({
+    select: { id: true, rawPayloadRetentionDays: true },
+  });
+
+  let pruned = 0;
+  for (const org of orgs) {
+    const cutoff = new Date(Date.now() - org.rawPayloadRetentionDays * 86_400_000);
+
+    const result = await db.ingestionEvent.updateMany({
+      where: {
+        organizationId: org.id,
+        receivedAt: { lt: cutoff },
+        payloadPrunedAt: null,
+      },
+      // Prisma.DbNull writes a real SQL NULL. `undefined` would mean "leave
+      // this column alone", so the prune would silently do nothing while
+      // still reporting a count.
+      data: { payload: Prisma.DbNull, payloadPrunedAt: new Date() },
+      limit,
+    });
+    pruned += result.count;
+  }
+
+  return { pruned };
 }
 
 /** Events that have exhausted their retries — the dead-letter queue. */

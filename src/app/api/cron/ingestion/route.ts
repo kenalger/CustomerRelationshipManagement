@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { sweepPendingIngestion } from "@/server/services/ingestion-queue";
+import { prunePayloads, sweepPendingIngestion } from "@/server/services/ingestion-queue";
 import { sweepSlaBreaches } from "@/server/services/sla";
 
 export const dynamic = "force-dynamic";
@@ -35,14 +35,29 @@ export async function GET(request: Request) {
   const started = Date.now();
 
   // Independent sweeps: a failure in one must not skip the other.
-  const [ingestion, sla] = await Promise.allSettled([
-    sweepPendingIngestion(),
-    sweepSlaBreaches(),
-  ]);
+  /*
+   * SEQUENTIAL, not Promise.all.
+   *
+   * Each sweep opens interactive transactions, and running them concurrently
+   * over the pg driver corrupts the protocol —
+   * `08P01: bind message supplies N parameters, but prepared statement ""
+   * requires 0`. This bit when a third sweep was added here; the runbook in
+   * plan/06-ops/local-development.md warns about exactly this.
+   *
+   * Each is still isolated: one failing must not skip the others, so every
+   * result is captured independently rather than letting a throw abort the run.
+   */
+  async function attempt<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
+    try {
+      return await fn();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
-  return Response.json({
-    ingestion: ingestion.status === "fulfilled" ? ingestion.value : { error: String(ingestion.reason) },
-    sla: sla.status === "fulfilled" ? sla.value : { error: String(sla.reason) },
-    ms: Date.now() - started,
-  });
+  const ingestion = await attempt(() => sweepPendingIngestion());
+  const sla = await attempt(() => sweepSlaBreaches());
+  const retention = await attempt(() => prunePayloads());
+
+  return Response.json({ ingestion, sla, retention, ms: Date.now() - started });
 }

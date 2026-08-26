@@ -139,6 +139,8 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
               companyName: lead.companyName,
               source: lead.source,
               status: lead.status,
+              score: lead.score,
+              scoredAt: lead.scoredAt,
               createdAt: lead.createdAt,
               firstTouchedAt: lead.firstTouchedAt,
               ageMinutes: lead.ageMinutes,

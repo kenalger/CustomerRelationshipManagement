@@ -1,3 +1,4 @@
+import { businessMinutesBetween } from "@/lib/business-hours";
 import { db } from "@/lib/db";
 import type { LeadStatus } from "@/generated/prisma/enums";
 import type { Ctx } from "@/server/authz";
@@ -38,10 +39,6 @@ function describe(lead: {
   );
 }
 
-function minutesSince(date: Date): number {
-  return Math.floor((Date.now() - date.getTime()) / 60_000);
-}
-
 export async function sweepSlaBreaches(
   options: { limit?: number; organizationId?: string } = {},
 ) {
@@ -56,12 +53,27 @@ export async function sweepSlaBreaches(
   // need for isolation and support needs for reprocessing a single customer.
   const organizations = await db.organization.findMany({
     where: options.organizationId ? { id: options.organizationId } : undefined,
-    select: { id: true, slaFirstTouchMinutes: true, slaEscalateMinutes: true },
+    select: {
+      id: true,
+      slaFirstTouchMinutes: true,
+      slaEscalateMinutes: true,
+      timezone: true,
+      businessHoursEnabled: true,
+      businessDays: true,
+      businessStartMinute: true,
+      businessEndMinute: true,
+    },
   });
 
   for (const org of organizations) {
     const now = Date.now();
 
+    /*
+     * The wall-clock cutoff is a SUPERSET, not the answer: working minutes can
+     * never exceed real minutes, so anything younger than the target in wall
+     * time cannot have breached in business time either. That keeps the query
+     * indexed, and the precise business-time test runs in JS below.
+     */
     const stale = await db.lead.findMany({
       where: {
         organizationId: org.id,
@@ -87,7 +99,6 @@ export async function sweepSlaBreaches(
 
     if (stale.length === 0) continue;
 
-    const escalateBefore = new Date(now - org.slaEscalateMinutes * 60_000);
     const managers = await db.user.findMany({
       where: { organizationId: org.id, deletedAt: null, role: { in: [...ESCALATION_ROLES] } },
       select: { id: true },
@@ -95,7 +106,10 @@ export async function sweepSlaBreaches(
 
     for (const lead of stale) {
       const who = describe(lead);
-      const waiting = minutesSince(lead.createdAt);
+      // Working minutes, so a lead that arrived on Friday evening is not
+      // reported as three days late on Monday morning.
+      const waiting = businessMinutesBetween(lead.createdAt, new Date(now), org);
+      if (waiting < org.slaFirstTouchMinutes) continue;
 
       // Stage 1 — nudge the owner.
       if (!lead.slaNotifiedAt && lead.ownerId) {
@@ -114,7 +128,7 @@ export async function sweepSlaBreaches(
       }
 
       // Stage 2 — escalate past the owner.
-      if (!lead.slaEscalatedAt && lead.createdAt <= escalateBefore) {
+      if (!lead.slaEscalatedAt && waiting >= org.slaEscalateMinutes) {
         for (const manager of managers) {
           // Do not escalate a lead to the very person who is sitting on it.
           if (manager.id === lead.ownerId) continue;

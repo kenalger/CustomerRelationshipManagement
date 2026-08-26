@@ -53,6 +53,15 @@ export async function updateOrganizationAction(
     await guarded(() =>
       updateOrganization(ctx, {
         name: formData.get("name") ?? "",
+        industry: formData.get("industry") ?? "",
+        website: formData.get("website") ?? "",
+        timezone: formData.get("timezone") ?? "UTC",
+        // An unchecked checkbox sends nothing at all, so absence means off.
+        businessHoursEnabled: formData.get("businessHoursEnabled") === "on",
+        businessDays: formData.getAll("businessDays").map(Number),
+        businessStartMinute: formData.get("businessStartMinute") ?? 540,
+        businessEndMinute: formData.get("businessEndMinute") ?? 1020,
+        rawPayloadRetentionDays: formData.get("rawPayloadRetentionDays") ?? 30,
         slaFirstTouchMinutes: formData.get("slaFirstTouchMinutes") ?? 30,
         slaEscalateMinutes: formData.get("slaEscalateMinutes") ?? 120,
       }),

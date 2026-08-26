@@ -27,6 +27,8 @@ export type LeadRow = {
   companyName: string | null;
   source: string;
   status: string;
+  score: number;
+  scoredAt: Date | null;
   createdAt: Date;
   firstTouchedAt: Date | null;
   ageMinutes: number;
@@ -40,6 +42,39 @@ const STATUS_TONE: Record<string, Tone> = {
   CONVERTED: "neutral",
   JUNK: "danger",
 };
+
+/**
+ * The score, as a number with a bar behind it.
+ *
+ * A bare integer in a column of integers is hard to rank at a glance, and a
+ * badge would spend the accent budget on every row. The bar is the neutral
+ * border colour at a width proportional to the score — comparison without
+ * colour, which also means it still reads in the CVD and print cases.
+ *
+ * `scoredAt === null` shows a dash, not a 0: `score` defaults to 0, so an
+ * unscored lead would otherwise look like one judged worthless.
+ */
+function ScoreCell({ score, scoredAt }: { score: number; scoredAt: Date | null }) {
+  if (scoredAt === null) {
+    return (
+      <span className="text-[12px] text-muted" title="Not scored yet">
+        —
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center justify-end gap-2">
+      <span aria-hidden className="h-1 w-10 overflow-hidden rounded-xs bg-hover">
+        <span
+          className="block h-full rounded-xs bg-border-strong"
+          style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+        />
+      </span>
+      <span className="w-6 text-right text-[13px] tabular-nums">{score}</span>
+    </span>
+  );
+}
 
 function AgeCell({
   row,
@@ -113,6 +148,9 @@ export function LeadsTable({
               Status
             </SortableTh>
             <Th>Owner</Th>
+            <SortableTh column="score" activeSort={sort} activeDir={dir} basePath="/leads" params={carried} align="right">
+              Score
+            </SortableTh>
             <SortableTh column="createdAt" activeSort={sort} activeDir={dir} basePath="/leads" params={carried} align="right">
               Age
             </SortableTh>
@@ -155,6 +193,9 @@ export function LeadsTable({
                       {row.ownerName ?? "Unassigned"}
                     </span>
                   </span>
+                </Td>
+                <Td align="right">
+                  <ScoreCell score={row.score} scoredAt={row.scoredAt} />
                 </Td>
                 <Td align="right">
                   <AgeCell row={row} warnAfter={warnAfter} dangerAfter={dangerAfter} />

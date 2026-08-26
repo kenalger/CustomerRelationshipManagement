@@ -60,6 +60,18 @@ enum ConnectionProvider {
   MICROSOFT
 }
 
+enum TagColour {
+  GRAY
+  BROWN
+  ORANGE
+  YELLOW
+  GREEN
+  BLUE
+  PURPLE
+  PINK
+  RED
+}
+
 enum NotificationType {
   LEAD_ASSIGNED
   LEAD_UNWORKED
@@ -80,6 +92,43 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+
+  // Workspace profile
+  industry String?
+  website  String?
+
+  /*
+   * Time. One IANA zone for the whole workspace — a co-located team wants one
+   * answer to "what day is it", and per-user zones would make a shared lead
+   * queue's business hours ambiguous.
+   */
+  timezone String @default("UTC")
+
+  /*
+   * Business hours. With these on, the SLA numbers below count WORKING
+   * minutes, so a lead arriving 17:55 on Friday is not three days late by
+   * Monday. Off falls back to wall-clock, for teams that genuinely run 24/7.
+   * ISO weekday numbers: 1 = Monday.
+   */
+  businessHoursEnabled Boolean @default(true)
+  businessDays         Int[]   @default([1, 2, 3, 4, 5])
+  businessStartMinute  Int     @default(540)
+  businessEndMinute    Int     @default(1020)
+
+  /*
+   * How long a raw provider payload is kept. ADR 0002 names this the main
+   * threat to the 0.5 GB database tier, and it is customers' personal data.
+   * Only the payload is pruned — the Lead it produced is kept.
+   */
+  rawPayloadRetentionDays Int @default(30)
+
+  /*
+   * Lead scoring weights. JSON rather than a table because the shape is a
+   * small fixed set of weights edited as one document and validated by Zod on
+   * the way in — a rules table would add joins for configurability we do not
+   * need. Null means "use the defaults".
+   */
+  scoringRules Json?
 
   // Speed-to-lead policy, in minutes from lead creation.
   // Nudge the owner first, escalate to managers if it is still untouched.
@@ -102,6 +151,15 @@ model Organization {
   auditLogs        AuditLog[]
   invitations      Invitation[]
   notifications    Notification[]
+  tags             Tag[]
+  taggings         Tagging[]
+  segments         Segment[]
+  prospectLists    ProspectList[]
+  listMembers      ProspectListMember[]
+  templates        EmailTemplate[]
+  campaigns        Campaign[]
+  sequenceSteps    SequenceStep[]
+  enrollments      Enrollment[]
 }
 
 model User {
@@ -129,6 +187,9 @@ model User {
   activities      Activity[]
   assignedTasks   Task[]       @relation("TaskAssignee")
   auditLogs       AuditLog[]
+  segments        Segment[]
+  prospectLists   ProspectList[]
+  campaigns       Campaign[]
 
   // Email is unique per organization, not globally — the same person may
   // belong to two customer orgs.
@@ -225,6 +286,7 @@ model Company {
   owner        User?        @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   contacts     Contact[]
   deals        Deal[]
+  taggings     Tagging[]
 
   @@index([organizationId, deletedAt, name])
   @@index([organizationId, ownerId])
@@ -256,6 +318,9 @@ model Contact {
   owner        User?        @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   deals        Deal[]
   leads        Lead[]
+  taggings     Tagging[]
+  listMemberships ProspectListMember[]
+  enrollments     Enrollment[]
 
   @@index([organizationId, deletedAt, lastName])
   @@index([organizationId, email])
@@ -370,6 +435,14 @@ model Lead {
   convertedDealId    String?
   convertedAt        DateTime?
 
+  /*
+   * Priority score, 0-100, recomputed from the organization's rules whenever
+   * the lead changes. Stored rather than derived so the queue can sort and
+   * filter on it in SQL.
+   */
+  score    Int       @default(0)
+  scoredAt DateTime?
+
   // SLA: when the owner first touched it. Null means still unworked.
   firstTouchedAt DateTime?
 
@@ -384,6 +457,9 @@ model Lead {
   deletedAt DateTime?
 
   organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  taggings         Tagging[]
+  listMemberships  ProspectListMember[]
+  enrollments      Enrollment[]
   owner            User?           @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   connection       Connection?     @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   ingestionEvent   IngestionEvent? @relation(fields: [ingestionEventId], references: [id], onDelete: SetNull)
@@ -395,6 +471,8 @@ model Lead {
   @@index([organizationId, ownerId, status])
   @@index([organizationId, source])
   @@index([organizationId, firstTouchedAt])
+  // Working the highest-value leads first is the point of scoring them.
+  @@index([organizationId, status, score])
   // The SLA sweeper scans across all tenants, so this leads with the columns
   // it filters on rather than organizationId.
   @@index([firstTouchedAt, status, createdAt])
@@ -449,7 +527,12 @@ model IngestionEvent {
   // Unique per org+provider: a replayed webhook is a no-op, not a duplicate lead.
   externalId String
 
-  payload   Json
+  // Nullable so the body can be pruned on the retention window while the
+  // event row survives — the record of what arrived and when is the audit
+  // trail and outlives the personal data inside it.
+  payload         Json?
+  payloadPrunedAt DateTime?
+
   status    IngestionStatus @default(RECEIVED)
   error     String?         @db.Text
   attempts  Int             @default(0)
@@ -559,6 +642,61 @@ model Notification {
   @@index([organizationId, userId, dedupeKey, readAt])
 }
 
+/**
+ * A label, scoped to the organization.
+ *
+ * Colour is an enum rather than free text so a tag can only ever be one of the
+ * nine validated pairs in the design system — arbitrary hex would let someone
+ * create an unreadable tag.
+ */
+model Tag {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  colour         TagColour @default(GRAY)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  taggings     Tagging[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, name])
+}
+
+/**
+ * Joins a tag to exactly one record.
+ *
+ * `organizationId` is denormalised so a tagging can be tenant-scoped without
+ * joining through the tag — every other table in this schema carries it and
+ * the visibility helpers depend on that being uniform.
+ */
+model Tagging {
+  id             String   @id @default(cuid())
+  organizationId String
+  tagId          String
+  createdAt      DateTime @default(now())
+
+  contactId String?
+  companyId String?
+  leadId    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tag          Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  // One tag per record, per type. Applying the same tag twice is a no-op
+  // rather than a duplicate row.
+  @@unique([tagId, contactId])
+  @@unique([tagId, companyId])
+  @@unique([tagId, leadId])
+  @@index([organizationId, tagId])
+  @@index([contactId])
+  @@index([companyId])
+  @@index([leadId])
+}
+
 model AuditLog {
   id             String   @id @default(cuid())
   organizationId String
@@ -575,4 +713,219 @@ model AuditLog {
 
   @@index([organizationId, entity, entityId, at])
   @@index([organizationId, at])
+}
+
+// ═══════════════════════════ outbound ═══════════════════════════
+//
+// Segments, prospect lists, campaigns and sequences. Everything here is
+// tenant-scoped by a denormalised `organizationId` for the same reason
+// `Tagging` carries one: the visibility helpers in `src/server/authz.ts`
+// filter on that column and depend on it being present on every table.
+
+enum SegmentEntity {
+  LEAD
+  CONTACT
+  COMPANY
+}
+
+/**
+ * A named, saved filter over one entity type.
+ *
+ * `filter` is a *typed document* — validated by `segmentFilterSchema` on the
+ * way in and translated to a Prisma `where` by the service on the way out. It
+ * is deliberately NOT a stored `where` clause: a saved row must never be able
+ * to dictate a query, or a segment becomes an injection vector that bypasses
+ * `visibleTo(ctx)`.
+ */
+model Segment {
+  id             String        @id @default(cuid())
+  organizationId String
+  name           String
+  entity         SegmentEntity
+  filter         Json
+  /// Shared segments are visible to the whole group; private ones only to the
+  /// owner. A rep running a shared segment still sees only their own records —
+  /// the segment narrows the query, it never widens visibility.
+  shared         Boolean       @default(true)
+  ownerId        String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, entity, name])
+  @@index([organizationId, entity])
+}
+
+/** A working set of prospects for a campaign, built from a segment or a CSV. */
+model ProspectList {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  ownerId        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members      ProspectListMember[]
+  campaigns    Campaign[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, name])
+}
+
+/** Exactly one of `contactId` / `leadId` is set, mirroring `Tagging`. */
+model ProspectListMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  listId         String
+  contactId      String?
+  leadId         String?
+  addedAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  list         ProspectList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@unique([listId, leadId])
+  @@index([organizationId, listId])
+}
+
+/**
+ * An email template with A/B variants.
+ *
+ * The template row carries the default copy; a variant overrides it. A campaign
+ * step with two variants assigns one per enrollment deterministically, so the
+ * same prospect never flips between variants on a retry.
+ */
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  subject        String
+  body           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  variants     TemplateVariant[]
+  steps        SequenceStep[]
+
+  @@unique([organizationId, name])
+}
+
+model TemplateVariant {
+  id             String   @id @default(cuid())
+  organizationId String
+  templateId     String
+  /// "A", "B", … — short and stable, because it is reported on.
+  label          String
+  subject        String
+  body           String
+  createdAt      DateTime @default(now())
+
+  template EmailTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, label])
+  @@index([organizationId, templateId])
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  goal           String?
+  status         CampaignStatus @default(DRAFT)
+  ownerId        String
+  listId         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  list         ProspectList?  @relation(fields: [listId], references: [id], onDelete: SetNull)
+  steps        SequenceStep[]
+  enrollments  Enrollment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+}
+
+/**
+ * One step of a sequence.
+ *
+ * `delayMinutes` is measured from the *previous* step becoming complete, not
+ * from enrollment, so inserting a step does not reschedule the whole sequence.
+ */
+model SequenceStep {
+  id             String   @id @default(cuid())
+  organizationId String
+  campaignId     String
+  position       Int
+  delayMinutes   Int      @default(0)
+  templateId     String?
+  /// What a rep does when the step comes due, while sending does not exist:
+  /// the step becomes a task with this instruction on it.
+  instruction    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  template     EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, position])
+  @@index([organizationId, campaignId])
+}
+
+enum EnrollmentState {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  /// Stopped by a person or by a reply/bounce — `stoppedReason` says which.
+  STOPPED
+}
+
+model Enrollment {
+  id             String          @id @default(cuid())
+  organizationId String
+  campaignId     String
+  contactId      String?
+  leadId         String?
+  state          EnrollmentState @default(ACTIVE)
+  /// The position of the step this enrollment is waiting on. 0 means it has
+  /// not started the first step yet.
+  currentPosition Int            @default(0)
+  /// When the next step becomes due. Null while paused or finished — the cron
+  /// sweep selects on `(state, nextDueAt)` and null rows fall out for free.
+  nextDueAt      DateTime?
+  /// The A/B variant this enrollment was assigned, fixed at enrollment time.
+  variantLabel   String?
+  stoppedReason  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  completedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@unique([campaignId, leadId])
+  @@index([organizationId, state, nextDueAt])
 }

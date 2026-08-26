@@ -3,14 +3,16 @@ import { notFound } from "next/navigation";
 
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
 import { EditableField } from "@/components/crm/editable-field";
+import { TagPicker } from "@/components/crm/tag-picker";
 import { Panel } from "@/components/ui/panel";
-import { LogActivityForm } from "@/components/crm/log-activity-form";
+import { RecordComposer } from "@/components/crm/record-composer";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { formatMoney } from "@/lib/money";
 import { requireCtx } from "@/server/context";
 import { listActivities } from "@/server/services/activities";
 import { getCompany } from "@/server/services/companies";
+import { listTags, tagsFor } from "@/server/services/tags";
 
 export default async function CompanyDetailPage({ params }: PageProps<"/companies/[id]">) {
   const ctx = await requireCtx();
@@ -19,7 +21,11 @@ export default async function CompanyDetailPage({ params }: PageProps<"/companie
   const company = await getCompany(ctx, id);
   if (!company) notFound();
 
-  const activities = await listActivities(ctx, { companyId: company.id });
+  const [activities, tags, allTags] = await Promise.all([
+    listActivities(ctx, { companyId: company.id }),
+    tagsFor(ctx, { companyId: company.id }),
+    listTags(ctx),
+  ]);
   const canEdit = ctx.role !== "READ_ONLY";
 
   return (
@@ -28,6 +34,15 @@ export default async function CompanyDetailPage({ params }: PageProps<"/companie
 
       <div className="grid gap-4 p-6 lg:grid-cols-[20rem_1fr]">
         <div className="space-y-4">
+          <Panel title="Tags">
+            <TagPicker
+              target={{ companyId: company.id }}
+              tags={tags}
+              all={allTags}
+              canEdit={canEdit}
+            />
+          </Panel>
+
           <Panel title="Details">
             <dl className="divide-y divide-border-subtle">
               <EditableField
@@ -123,7 +138,7 @@ export default async function CompanyDetailPage({ params }: PageProps<"/companie
         </div>
 
         <div className="space-y-4">
-          <LogActivityForm link={{ companyId: company.id }} />
+          <RecordComposer link={{ companyId: company.id }} canWrite={canEdit} />
           <Panel title="Activity">
             <ActivityTimeline activities={activities} />
           </Panel>

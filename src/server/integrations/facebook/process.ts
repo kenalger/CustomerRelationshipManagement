@@ -27,12 +27,21 @@ export async function processLeadgenEvent(
     select: {
       id: true,
       externalId: true,
+      payloadPrunedAt: true,
       connection: {
         select: { id: true, encryptedTokens: true, status: true, fieldMapping: true },
       },
     },
   });
   if (!event) return { kind: "failed", reason: "event not found" };
+
+  // A pruned event cannot be replayed: the body it needed is gone by policy.
+  // Say so plainly rather than failing somewhere further in with a null.
+  if (event.payloadPrunedAt) {
+    const reason = "raw payload was pruned by the retention policy — cannot replay";
+    await failIngestionEvent(eventId, reason, { retryable: false });
+    return { kind: "failed", reason };
+  }
 
   if (!event.connection?.encryptedTokens) {
     const reason = "connection has no access token — reconnect the Facebook page";

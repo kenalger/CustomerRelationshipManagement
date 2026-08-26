@@ -186,11 +186,11 @@ export function CommandHint() {
           new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
         )
       }
-      className="flex h-7 w-full items-center gap-2 rounded-md border border-border-subtle bg-sunken px-2 text-[12px] text-muted transition-colors hover:border-border-strong hover:text-foreground"
+      className="flex h-8 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface px-2.5 text-[13px] text-muted transition-colors hover:border-border-strong hover:text-foreground"
     >
-      <Search size={13} strokeWidth={1.75} aria-hidden />
+      <Search size={15} strokeWidth={1.75} aria-hidden />
       <span className="flex-1 text-left">Search</span>
-      <kbd className="rounded border border-border-subtle px-1 text-[12px]">⌘K</kbd>
+      <kbd className="rounded-sm border border-border-subtle px-1.5 py-0.5 text-[11px] leading-none">⌘K</kbd>
     </button>
   );
 }

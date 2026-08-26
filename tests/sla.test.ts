@@ -32,6 +32,23 @@ describe("speed-to-lead SLA", () => {
 
   beforeAll(async () => {
     org = await makeOrg();
+
+    /*
+     * Business hours OFF for these tests.
+     *
+     * They exercise the escalation MECHANICS — who is notified, once, and in
+     * what order — by backdating `createdAt`. With business hours on (the
+     * product default) a lead backdated 45 minutes only breaches if the suite
+     * happens to run inside 09:00-17:00 on a weekday, which would make every
+     * assertion here depend on the clock.
+     *
+     * The working-time arithmetic itself is covered deterministically in
+     * tests/business-hours.test.ts against fixed instants.
+     */
+    await db.organization.update({
+      where: { id: org.org.id },
+      data: { businessHoursEnabled: false },
+    });
     const manager = await db.user.create({
       data: {
         organizationId: org.org.id,
@@ -137,6 +154,10 @@ describe("speed-to-lead SLA", () => {
     // rather than implying someone was warned.
     const solo = await makeOrg();
     try {
+      await db.organization.update({
+        where: { id: solo.org.id },
+        data: { businessHoursEnabled: false },
+      });
       const leadId = await seedLead(solo.org.id, "sla-solo", "solo@test.local");
       await age(leadId, 180);
 
@@ -204,7 +225,7 @@ describe("speed-to-lead SLA", () => {
     try {
       await db.organization.update({
         where: { id: strict.org.id },
-        data: { slaFirstTouchMinutes: 5, slaEscalateMinutes: 10 },
+        data: { slaFirstTouchMinutes: 5, slaEscalateMinutes: 10, businessHoursEnabled: false },
       });
 
       const leadId = await seedLead(strict.org.id, "sla-strict", "strict@test.local");

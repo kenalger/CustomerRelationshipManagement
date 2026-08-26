@@ -34,14 +34,22 @@ export function NavLink({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex h-[30px] items-center gap-2 rounded-md px-2.5",
+        "group relative flex h-8 items-center gap-2.5 rounded-md px-2.5",
         "text-[14px] transition-colors duration-100 ease-out",
         active
           ? "bg-hover font-[560] text-foreground"
           : "text-secondary hover:bg-hover hover:text-foreground",
       )}
     >
-      <span className="shrink-0" aria-hidden>
+      {/* The icon is dimmed until the row is active or hovered, so a column of
+          seven icons does not compete with the one that matters. */}
+      <span
+        aria-hidden
+        className={cn(
+          "shrink-0 transition-colors duration-100",
+          active ? "text-foreground" : "text-muted group-hover:text-secondary",
+        )}
+      >
         {icon}
       </span>
       <span className="flex-1 truncate">{children}</span>

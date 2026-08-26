@@ -112,13 +112,59 @@ Owner: *"everything is on the left side of the screen"*, *"increase the size of 
 ### A process failure worth recording
 Two of the pass-2 board edits **silently did not apply** — the column width and the sunken ground — because the string-replace did not match, and I reported the pass as complete without checking those specific classes had landed. The board stayed at 248px through a change I had described as shipped. Any edit made by string substitution has to be verified by grepping for the *new* value, not by the absence of an error.
 
+## Pass 4 — inline cell editing (2026-08-25)
+
+"Everything editable in place" is the core of the reference aesthetic, and it was the biggest remaining gap. Built from the mechanics in `plan/07-research/crm-ui-mechanics.md` rather than invented.
+
+**Two-state focus, per the W3C ARIA grid pattern.** "Soft focus" — which cell is highlighted and arrow-navigable — is kept as *separate state* from edit mode. Collapsing them is what makes home-grown grids feel wrong: arrow keys start typing, Escape closes the page instead of the editor, Tab escapes the table.
+
+Keys: arrows move and clamp at the edges · Home/End jump to row ends · Enter and F2 enter edit mode · any printable character enters edit mode **seeded with that character**, so typing over a cell just works · Escape reverts and returns focus to the grid, not the body · Enter commits and drops to the cell below · Tab commits and moves along the row.
+
+**The identity column navigates instead of editing** — clicking a contact's name opens the record; every other cell edits. That branch is the single most copyable mechanic in the research and it is why a name column that opens a record does not feel inconsistent with a table you can type into.
+
+**Grid hotkeys yield to the overlay stack**, so arrow keys do nothing while a dialog is open.
+
+### A bug that verification caught
+Every cell rendered at `tabindex="-1"` and none at `0`, which meant **Tab skipped the entire grid and it was unreachable by keyboard**. Roving tabindex needs exactly one tab stop; with nothing focused yet there was none. The first cell now holds it until focus moves. Verified in the rendered output: 1 cell at `0`, 11 at `-1`.
+
+Writes reuse the same `saveFieldAction` as the record page, so the field allowlist and the ownership rule apply unchanged — a grid cell is not a wider write path than a form. 5 tests cover that specifically.
+
+## Pass 5 — header and sidebar identity (2026-08-25)
+
+**The page bar had three faults.**
+1. A 15px title stacked over a 13px description inside a **fixed 52px** band — about 39px of text in 52px of bar, so it clipped and the page title was the same size as a panel heading. Now `min-h-56px` with a real 18px/590 title, and the bar grows rather than squeezing when a page carries a description.
+2. `pr-20` was a magic number compensating for the account control being `position: fixed`.
+3. **The header and the content beneath it were centred within different widths** — the bar inside `viewport − sidebar − gutter`, the content inside `viewport − sidebar` — so the title never quite lined up with the table under it. Found by reading the containers, before it was reported.
+
+Fixed structurally: the account control now renders **inside the page bar**, in the same centred `max-w-[1280px]` container as the content, with a rule separating page actions from it. No fixed positioning, no gutter token. `PageHeader` became a Server Component that resolves the user itself; the session behind it is request-cached, so it costs one extra select.
+
+**Sidebar identity.** Was a flat grey square holding a letter — identical for every organisation. Now a tile coloured from the org's own name, with the role beneath it, sitting in the same band as the page bar so the two line up across the divider. The hue function is shared with `Avatar` in `src/lib/hue.ts`, because two components deriving colour independently is how the same name ends up in two shades.
+
+**Nav icons** are muted until their row is active or hovered, so a column of seven icons stops competing with the one that matters. Search moved to the same 14px scale as the rest of the sidebar.
+
+## Pass 6 — the record composer (2026-08-26)
+
+Owner: the add-activity form "looks like an open form, it looks messy".
+
+**It was two open forms, stacked.** A record page rendered an activity form — a four-button type selector, a subject input and a three-row textarea — directly above a task form with its own title, date and assignee. Roughly nine visible controls competing with the timeline the page exists to show.
+
+**Nobody does this.** From `plan/07-research/crm-ui-mechanics.md`: Salesforce's docked composer has an explicit **Closed** state and Email / Log a Call / New Task tabs above the timeline; Attio puts New note and New task behind header actions with `n` and `t` shortcuts; Close puts a single composer in the centre column. The form appears when you mean to write something.
+
+**Now one collapsed control** reading "Log a call, email or note — or add a task", which expands into a tabbed composer: Note · Call · Email · Meeting · Task. The Task tab absorbed the separate task form entirely, so adding a follow-up and logging a call are the same motion in the same place.
+
+Details worth keeping: the relevant field is focused the moment a tab opens, so opening and typing is one gesture; `Cmd/Ctrl+Enter` submits from anywhere in the form and `Escape` closes without saving — the two shortcuts people try first; and the composer collapses again after a successful save rather than sitting open.
+
+Verified in the rendered page: **0 visible inputs or textareas** while closed, down from about nine, and no tablist in the DOM until it is opened.
+
+The standalone `AddTaskForm` is still used on `/tasks`, where an always-visible add row is right — that page is a list you are working through, not a record you are reading.
+
 ## Still to do
 - **Charts** still use the accent for their single series. Against a white page with a blue accent that may read as generic; a tag hue might sit better.
 - **Record detail pages** keep the two-column layout. In a database aesthetic these are usually a stacked page with a properties block at the top.
 - **No inline cell editing in tables.** The reference is "everything editable in place"; today only record pages have click-to-edit.
 - Avatars are still a coloured-initials circle. Notion uses these too, but the hue set should come from the tag palette rather than a hash across the whole wheel.
 - **Record detail layouts** are still the two-column app shape rather than a stacked properties page.
-- **No inline cell editing in tables** — the biggest remaining gap against the reference.
+- ~~No inline cell editing in tables~~ — **shipped 2026-08-25** for contacts (title, email, phone). See below.
 - The design guard has no rule for the v2 decisions — it still bans indigo, but nothing stops someone reintroducing a shadow on a static surface or a cool-grey.
 
 ## Not changing

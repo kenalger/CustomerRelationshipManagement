@@ -100,7 +100,6 @@ export default async function ContactsPage({ searchParams }: PageProps<"/contact
               companyId: c.company?.id ?? null,
               companyName: c.company?.name ?? null,
               ownerName: c.owner?.name ?? c.owner?.email ?? null,
-              createdAt: c.createdAt,
             }))}
             total={total}
             page={page}

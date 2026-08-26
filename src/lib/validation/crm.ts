@@ -27,7 +27,7 @@ export const contactUpdateSchema = contactCreateSchema.partial();
  * crafted param sort by — and therefore probe — any column on the table.
  */
 export const CONTACT_SORTS = ["lastName", "email", "createdAt"] as const;
-export const LEAD_SORTS = ["createdAt", "status", "source", "companyName"] as const;
+export const LEAD_SORTS = ["createdAt", "status", "source", "companyName", "score"] as const;
 export const COMPANY_SORTS = ["name", "domain", "industry"] as const;
 
 // `.catch` rather than `.default`: a default only covers a *missing* value, so
