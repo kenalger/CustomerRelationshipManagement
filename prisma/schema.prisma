@@ -1092,8 +1092,13 @@ model Target {
    * One target per person per metric per period. A team target (userId null)
    * coexists with the per-person ones rather than competing with them.
    *
+   * `period` is IN the key, not implied by `periodStart`. Every quarter starts
+   * on a month boundary, so without it a monthly and a quarterly target for
+   * the same person and metric collide four times a year — 1 January, 1 April,
+   * 1 July, 1 October — and setting one silently overwrites the other.
+   *
    * IMPORTANT: this index is recreated by hand as NULLS NOT DISTINCT in
-   * `migrations/20260826054809_target_team_uniqueness`. Postgres treats NULLs
+   * `migrations/20260826060000_target_period_in_key`. Postgres treats NULLs
    * as distinct by default, so as Prisma generates it this constraint does NOT
    * constrain team targets at all — two identical rows both insert, and an
    * upsert keyed on it can never match the existing one. Verified against a
@@ -1101,7 +1106,7 @@ model Target {
    * NULLS NOT DISTINCT; if this index is ever regenerated, that migration must
    * be re-applied.
    */
-  @@unique([organizationId, userId, metric, periodStart])
+  @@unique([organizationId, userId, metric, period, periodStart])
   @@index([organizationId, periodStart])
   @@index([organizationId, userId, periodStart])
 }
