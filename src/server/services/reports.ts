@@ -172,6 +172,79 @@ export async function winLoss(ctx: Ctx, days = 90) {
   };
 }
 
+/**
+ * How far deals slip past the date they were forecast to close.
+ *
+ * `expectedCloseDate` has been captured, edited and sorted on since the
+ * pipeline was built, but nothing has ever compared it to `closedAt` — so a
+ * deal that slipped three months running has looked identical to one that
+ * closed on the day. That gap is the whole reason forecasts drift: the miss is
+ * invisible, so nobody corrects for it.
+ *
+ * Median rather than mean. One deal that slipped 300 days drags a mean into
+ * uselessness, and the question being asked is "what does a typical deal do".
+ *
+ * Deals with no forecast date are counted and reported separately rather than
+ * dropped — "we don't forecast half our deals" is itself the finding, and
+ * silently excluding them would make the slippage look better the less
+ * disciplined the team is.
+ */
+export async function dealSlippage(ctx: Ctx, days = 90) {
+  const since = new Date(Date.now() - days * 86_400_000);
+
+  const closed = await db.deal.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      deletedAt: null,
+      closedAt: { gte: since },
+      ...visibleTo(ctx),
+    },
+    select: {
+      expectedCloseDate: true,
+      closedAt: true,
+      stage: { select: { isWon: true } },
+    },
+  });
+
+  const forecast = closed.filter((d) => d.expectedCloseDate !== null && d.closedAt !== null);
+  const unforecast = closed.length - forecast.length;
+
+  if (forecast.length === 0) {
+    // Null, not zero. "No deal has ever slipped" and "nobody sets a forecast
+    // date" are opposite findings and must not render identically.
+    return {
+      medianSlipDays: null,
+      onTime: 0,
+      late: 0,
+      early: 0,
+      unforecast,
+      sampled: 0,
+    };
+  }
+
+  const slips = forecast
+    .map((d) =>
+      Math.round(
+        (d.closedAt!.getTime() - d.expectedCloseDate!.getTime()) / 86_400_000,
+      ),
+    )
+    .sort((a, b) => a - b);
+
+  const mid = Math.floor(slips.length / 2);
+  const median =
+    slips.length % 2 === 0 ? Math.round((slips[mid - 1] + slips[mid]) / 2) : slips[mid];
+
+  return {
+    medianSlipDays: median,
+    // A day either side is on time; nobody closes to the hour.
+    onTime: slips.filter((d) => Math.abs(d) <= 1).length,
+    late: slips.filter((d) => d > 1).length,
+    early: slips.filter((d) => d < -1).length,
+    unforecast,
+    sampled: slips.length,
+  };
+}
+
 /** Per-rep throughput, for a manager reviewing the team. */
 export async function ownerPerformance(ctx: Ctx, days = 90) {
   const since = new Date(Date.now() - days * 86_400_000);

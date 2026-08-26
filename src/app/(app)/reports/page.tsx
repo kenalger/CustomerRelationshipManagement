@@ -9,6 +9,7 @@ import { Td, TableShell, Th, Tr } from "@/components/ui/table";
 import { formatTotal } from "@/lib/money";
 import { requireCtx } from "@/server/context";
 import {
+  dealSlippage,
   leadsBySource,
   ownerPerformance,
   pipelineHealth,
@@ -31,11 +32,12 @@ function minutes(value: number | null) {
 export default async function ReportsPage() {
   const ctx = await requireCtx();
 
-  const [sources, health, outcome, owners] = await Promise.all([
+  const [sources, health, outcome, owners, slippage] = await Promise.all([
     leadsBySource(ctx),
     pipelineHealth(ctx),
     winLoss(ctx),
     ownerPerformance(ctx),
+    dealSlippage(ctx),
   ]);
 
   const hasAnything = sources.length > 0 || health.some((s) => s.deals > 0);
@@ -113,6 +115,54 @@ export default async function ReportsPage() {
                 </ul>
               </div>
             ) : null}
+          </Panel>
+
+          <Panel
+            title="Forecast accuracy"
+            description="How far deals drift from the date they were forecast to close"
+          >
+            {slippage.medianSlipDays === null ? (
+              <p className="text-[13px] text-muted">
+                {slippage.unforecast > 0
+                  ? `No closed deal in this window carried a forecast close date${
+                      slippage.unforecast === 1 ? "" : ` — ${slippage.unforecast} closed without one`
+                    }. Forecast dates are what make this measurable.`
+                  : "Nothing has closed in this window yet."}
+              </p>
+            ) : (
+              <>
+                <dl className="grid grid-cols-2 gap-4">
+                  <div>
+                    <dt className="t-caps text-muted">Typical slip</dt>
+                    <dd className="mt-1 text-[24px] font-[590] tabular-nums">
+                      {slippage.medianSlipDays > 0 ? "+" : ""}
+                      {slippage.medianSlipDays}d
+                    </dd>
+                    {/* Median, not mean: one deal that slipped 300 days would
+                        drag a mean past the point of being about anything. */}
+                    <dd className="text-[13px] text-muted">
+                      median across {slippage.sampled}{" "}
+                      {slippage.sampled === 1 ? "deal" : "deals"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="t-caps text-muted">On time</dt>
+                    <dd className="mt-1 text-[24px] font-[590] tabular-nums">{slippage.onTime}</dd>
+                    <dd className="text-[13px] text-muted">
+                      {slippage.late} late · {slippage.early} early
+                    </dd>
+                  </div>
+                </dl>
+
+                {slippage.unforecast > 0 ? (
+                  <p className="mt-5 border-t border-border-subtle pt-4 text-[13px] text-muted">
+                    {slippage.unforecast}{" "}
+                    {slippage.unforecast === 1 ? "deal closed" : "deals closed"} without a forecast
+                    date and {slippage.unforecast === 1 ? "is" : "are"} not counted above.
+                  </p>
+                ) : null}
+              </>
+            )}
           </Panel>
         </div>
 

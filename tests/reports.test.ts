@@ -5,6 +5,7 @@ import type { Ctx } from "@/server/authz";
 import { createDeal, moveDealToStage } from "@/server/services/deals";
 import { ingestLead, convertLead, markLeadTouched } from "@/server/services/leads";
 import {
+  dealSlippage,
   leadsBySource,
   ownerPerformance,
   pipelineHealth,
@@ -133,6 +134,116 @@ describe("leadership reporting", () => {
     expect(owner?.leads).toBe(3);
     expect(owner?.untouched).toBe(2);
     expect(owner?.dealsWon).toBe(1);
+  });
+
+  describe("deal slippage", () => {
+    let slipOrg: Awaited<ReturnType<typeof makeOrg>>;
+    let slipWonStage: string;
+
+    /** Creates a closed deal with a forecast date and an actual close date. */
+    async function closedDeal(expected: Date | null, closedAt: Date) {
+      await db.deal.create({
+        data: {
+          organizationId: slipOrg.org.id,
+          title: `Slip ${closedAt.toISOString()}-${Math.random()}`,
+          value: 1000,
+          currency: "USD",
+          pipelineId: slipOrg.pipeline.id,
+          stageId: slipWonStage,
+          expectedCloseDate: expected,
+          closedAt,
+        },
+      });
+    }
+
+    beforeAll(async () => {
+      // Its own org: slippage is org-wide, so asserting counts inside the
+      // shared fixture would really be asserting on file execution order.
+      slipOrg = await makeOrg();
+      slipWonStage = (
+        await db.stage.findFirstOrThrow({
+          where: { pipelineId: slipOrg.pipeline.id, isWon: true },
+        })
+      ).id;
+    });
+
+    afterAll(async () => {
+      await dropOrg(slipOrg.org.id);
+    });
+
+    it("reports null rather than zero when nothing carries a forecast date", async () => {
+      // "No deal ever slipped" and "nobody sets a forecast date" are opposite
+      // findings and must not render identically.
+      const empty = await dealSlippage(slipOrg.ctx);
+      expect(empty.medianSlipDays).toBeNull();
+      expect(empty.sampled).toBe(0);
+    });
+
+    it("counts deals with no forecast date instead of dropping them", async () => {
+      const closed = new Date(Date.now() - 5 * 86_400_000);
+      await closedDeal(null, closed);
+
+      const result = await dealSlippage(slipOrg.ctx);
+      expect(result.unforecast).toBe(1);
+      // Still nothing to measure — the unforecast deal must not become a 0.
+      expect(result.medianSlipDays).toBeNull();
+    });
+
+    it("takes the median so one wild deal cannot distort it", async () => {
+      const day = 86_400_000;
+      const base = Date.now() - 30 * day;
+
+      // Slips of 2, 4, and 300 days. The mean is 102; the median is 4.
+      await closedDeal(new Date(base), new Date(base + 2 * day));
+      await closedDeal(new Date(base), new Date(base + 4 * day));
+      await closedDeal(new Date(base), new Date(base + 300 * day));
+
+      const result = await dealSlippage(slipOrg.ctx);
+      expect(result.sampled).toBe(3);
+      expect(result.medianSlipDays).toBe(4);
+      expect(result.late).toBe(3);
+    });
+
+    it("treats a day either side as on time, and counts early separately", async () => {
+      const fresh = await makeOrg();
+      const wonStageId = (
+        await db.stage.findFirstOrThrow({
+          where: { pipelineId: fresh.pipeline.id, isWon: true },
+        })
+      ).id;
+      const base = Date.now() - 20 * 86_400_000;
+
+      for (const offsetDays of [0, 1, -1, -9, 6]) {
+        await db.deal.create({
+          data: {
+            organizationId: fresh.org.id,
+            title: `Edge ${offsetDays}`,
+            value: 500,
+            currency: "USD",
+            pipelineId: fresh.pipeline.id,
+            stageId: wonStageId,
+            expectedCloseDate: new Date(base),
+            closedAt: new Date(base + offsetDays * 86_400_000),
+          },
+        });
+      }
+
+      const result = await dealSlippage(fresh.ctx);
+      // Nobody closes to the hour, so 0 and ±1 all count as on time.
+      expect(result.onTime).toBe(3);
+      expect(result.early).toBe(1);
+      expect(result.late).toBe(1);
+
+      await dropOrg(fresh.org.id);
+    });
+
+    it("does not see another tenant's deals", async () => {
+      const stranger = await makeOrg();
+      const result = await dealSlippage(stranger.ctx);
+      expect(result.sampled).toBe(0);
+      expect(result.unforecast).toBe(0);
+      await dropOrg(stranger.org.id);
+    });
   });
 
   describe("scoping", () => {
