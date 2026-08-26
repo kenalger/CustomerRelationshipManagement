@@ -12,5 +12,8 @@ One folder per feature: `plan.md` (required), `ux.md`, `tasks.md`. Copy from `pl
 | `tasks/` | M1 | Shipped 2026-08-24 |
 | `deal-aging/` | M2 | Shipped 2026-08-24 |
 | `list-views/` | M1 / M5 | Shipped 2026-08-24 |
+| `org-settings/` | M3a | Shipped 2026-08-26 |
+| `outreach/` | M5 | Shipped 2026-08-26 — sending still blocked on a provider |
+| `kpis/` | M6 | **Draft — decisions needed** |
 
 Design system lives in [`plan/08-design/`](../08-design/design-system.md).

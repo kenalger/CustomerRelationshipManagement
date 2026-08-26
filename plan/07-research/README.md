@@ -17,6 +17,9 @@ Anything that couldn't be verified against a real source is marked `UNVERIFIED` 
 - [ ] `lead-dedupe-strategies.md` — how incumbent CRMs match and merge; normalization rules
 - [ ] `crm-automation-ux.md` — how HubSpot/Pipedrive/Attio/Close present workflow builders
 
+## Added 2026-08-26
+- [x] `sales-kpis-and-quotas.md` — **partial.** Goodhart's law and the committed-vs-aspirational split are well sourced and are the load-bearing findings. **Benchmark numbers are NOT established** — the session's web search budget was exhausted (200/200) and every quota/attainment source I could name directly returned 403 or 404. No default quota or coverage ratio may ship as a hardcoded constant until this is finished.
+
 ## Added by the 2026-08-23 scoping decisions
 - [ ] `meta-app-review.md` — permissions needed per surface, review timeline, Business Verification, tech-provider vs. own-app model
 - [ ] `meta-messenger-api.md` — message webhooks, `pages_messaging`, 24-hour window, turning a conversation into a lead
