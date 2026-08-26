@@ -9,7 +9,7 @@ import { Badge, Dot, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { StatTile } from "@/components/ui/stat-tile";
-import { formatMoney, formatTotal } from "@/lib/money";
+import { formatDominant, formatMoney, otherCurrencyNote } from "@/lib/money";
 import { timeAgo } from "@/lib/utils";
 import { requireCtx } from "@/server/context";
 import { getDashboard } from "@/server/services/dashboard";
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
                 See the team
               </Link>
             </header>
-            <div className="grid gap-px bg-border-subtle sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3">
               {myTargets.map((row) => {
                 /*
                  * Graded against what success means for THIS metric. An
@@ -129,7 +129,10 @@ export default async function DashboardPage() {
                         : "Not started";
 
                 return (
-                  <div key={row.targetId} className="bg-surface p-5">
+                  <div
+                    key={row.targetId}
+                    className="border-b border-border-subtle p-5 sm:[&:nth-child(2n)]:border-r-0 sm:border-r lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(3n)]:border-r-0"
+                  >
                     <p className="t-caps text-muted">{METRIC_LABEL[row.metric]}</p>
                     <p className="mt-1 text-[22px] font-[590] tabular-nums">
                       {isMoneyMetric(row.metric) && row.currency
@@ -168,17 +171,28 @@ export default async function DashboardPage() {
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {/*
+            `formatDominant`, not `formatTotal`: at display size the "+1 more"
+            suffix wraps onto a second line and the tile reads as broken. The
+            other currencies are still reported, in the line beneath, where
+            there is room for the words.
+          */}
           <StatTile
             label="Open pipeline"
-            value={formatTotal(data.pipelineValue)}
-            sub={`${data.openCount} open ${data.openCount === 1 ? "deal" : "deals"}`}
+            value={formatDominant(data.pipelineValue)}
+            sub={[
+              `${data.openCount} open ${data.openCount === 1 ? "deal" : "deals"}`,
+              otherCurrencyNote(data.pipelineValue),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             icon={CircleDollarSign}
             href="/deals"
           />
           <StatTile
             label="Weighted forecast"
-            value={formatTotal(data.weighted)}
-            sub={conversionHint}
+            value={formatDominant(data.weighted)}
+            sub={[conversionHint, otherCurrencyNote(data.weighted)].filter(Boolean).join(" · ")}
             icon={Target}
             href="/deals"
           />

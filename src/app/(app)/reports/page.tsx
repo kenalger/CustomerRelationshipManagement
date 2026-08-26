@@ -1,5 +1,7 @@
 import { BarChart3, ChevronLeft, ChevronRight, Target as TargetIcon } from "lucide-react";
 import Link from "next/link";
+
+import { cn } from "@/lib/utils";
 import { z } from "zod";
 
 import { PageHeader } from "@/components/page-header";
@@ -238,34 +240,66 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <div className="mx-auto w-full max-w-[1280px] space-y-6 p-8">
         {/* ─────────────── targets ─────────────── */}
         <section className="rounded-md border border-border-subtle bg-surface">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-5 py-3.5">
+          <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border-subtle px-5 py-4">
             <div>
-              <h2 className="t-heading">Targets · {periodName}</h2>
+              <h2 className="t-heading">Targets</h2>
               <p className="mt-0.5 text-[13px] text-muted">
                 What each person is measured against, and whether the pace gets them there.
               </p>
             </div>
-            <div className="flex items-center gap-1">
-              <Link
-                href={reportHref(period, previousKey)}
-                className="rounded-md px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-foreground"
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Link
+                  href={reportHref(period, previousKey)}
+                  aria-label={`Previous period, ${humanPeriod(previousKey)}`}
+                  className="flex size-8 items-center justify-center rounded-md border border-border-subtle bg-surface text-secondary transition-colors hover:text-foreground"
+                >
+                  <ChevronLeft size={15} aria-hidden />
+                </Link>
+                <span className="min-w-[9.5rem] text-center text-[14px] font-[560]">
+                  {periodName}
+                </span>
+                <Link
+                  href={reportHref(period, nextKey)}
+                  aria-label={`Next period, ${humanPeriod(nextKey)}`}
+                  className="flex size-8 items-center justify-center rounded-md border border-border-subtle bg-surface text-secondary transition-colors hover:text-foreground"
+                >
+                  <ChevronRight size={15} aria-hidden />
+                </Link>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Period length"
+                className="flex items-center gap-1 rounded-lg border border-border-subtle bg-surface p-0.5"
               >
-<ChevronLeft size={13} strokeWidth={2} aria-hidden />
-                Previous
-              </Link>
-              <Link
-                href={reportHref(period === "MONTH" ? "QUARTER" : "MONTH", periodKey)}
-                className="rounded-md px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-foreground"
-              >
-                {period === "MONTH" ? "Quarterly" : "Monthly"}
-              </Link>
-              <Link
-                href={reportHref(period, nextKey)}
-                className="rounded-md px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-foreground"
-              >
-Next
-                <ChevronRight size={13} strokeWidth={2} aria-hidden />
-              </Link>
+                {(["MONTH", "QUARTER"] as const).map((option) => {
+                  const active = period === option;
+                  // Switching length re-anchors on the same instant, so someone
+                  // looking at September lands on the quarter containing it
+                  // rather than on today's.
+                  const optionKey = periodLabel(
+                    option,
+                    periodBounds(option, anchor, timeZone).start,
+                    timeZone,
+                  );
+                  return (
+                    <Link
+                      key={option}
+                      href={reportHref(option, optionKey)}
+                      aria-current={active ? "true" : undefined}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-[13px] transition-colors duration-100",
+                        active
+                          ? "bg-accent-soft font-[560] text-accent"
+                          : "text-secondary hover:text-foreground",
+                      )}
+                    >
+                      {option === "MONTH" ? "Month" : "Quarter"}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           </header>
 

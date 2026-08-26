@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  Bell,
   Building2,
   CheckSquare,
   KanbanSquare,
@@ -15,7 +14,6 @@ import { NavLink } from "@/components/nav-link";
 import { WorkspaceTile } from "@/components/workspace-tile";
 import { db } from "@/lib/db";
 import { requireCtx } from "@/server/context";
-import { unreadCount } from "@/server/services/notifications";
 import { countOverdue } from "@/server/services/tasks";
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -26,9 +24,8 @@ export default async function AppLayout({
 }: LayoutProps<"/"> & { modal: React.ReactNode }) {
   const ctx = await requireCtx();
 
-  const [org, unread, overdue] = await Promise.all([
+  const [org, overdue] = await Promise.all([
     db.organization.findUnique({ where: { id: ctx.organizationId }, select: { name: true } }),
-    unreadCount(ctx),
     countOverdue(ctx),
   ]);
 
@@ -43,10 +40,16 @@ export default async function AppLayout({
         {/*
           Sits in the same band as the page bar so the two line up across the
           divider, instead of the sidebar's identity floating at its own
-          height. The tile is coloured from the organisation's name — a flat
-          grey square looks identical for every customer.
+          height. That only actually holds if BOTH bands are a fixed
+          `--header-h` — as a min-height plus padding this one settled at 60px
+          against a page bar of 56px or 70px, and the two rules missed each
+          other on every route. Do not reintroduce `min-h` or vertical padding
+          here without doing the same to `PageHeader`.
+
+          The tile is coloured from the organisation's name — a flat grey
+          square looks identical for every customer.
         */}
-        <div className="flex min-h-[var(--header-h)] items-center gap-2.5 border-b border-border-subtle px-4 py-3">
+        <div className="flex h-[var(--header-h)] items-center gap-2.5 border-b border-border-subtle px-4">
           <WorkspaceTile name={org?.name ?? "Workspace"} size={30} />
           <div className="min-w-0">
             <p className="truncate text-[14px] font-[590] leading-5">
@@ -65,9 +68,6 @@ export default async function AppLayout({
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3" aria-label="Main">
           <NavLink href="/dashboard" icon={<LayoutDashboard {...ICON} />}>
             Overview
-          </NavLink>
-          <NavLink href="/notifications" icon={<Bell {...ICON} />} badge={unread}>
-            Notifications
           </NavLink>
           <NavLink href="/tasks" icon={<CheckSquare {...ICON} />} badge={overdue} badgeTone="alert">
             Tasks

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { Role } from "@/generated/prisma/enums";
 import { TargetMetric, TargetPeriod } from "@/generated/prisma/enums";
 import { db } from "@/lib/db";
 import { type MoneyTotal, sumByCurrency, weightedByCurrency } from "@/lib/money";
@@ -97,6 +98,16 @@ export const targetSetSchema = z
 
 export type TargetSetInput = z.infer<typeof targetSetSchema>;
 
+/**
+ * A batch of targets, as one save of the rep x metric grid.
+ *
+ * Capped because the whole batch runs in a single interactive transaction and
+ * writes an audit row per entry — an unbounded array would sit on a connection
+ * long enough to hit the transaction timeout, and a half-applied grid is the
+ * one outcome worse than a rejected one.
+ */
+export const targetSetManySchema = z.array(targetSetSchema).min(1).max(200);
+
 // ─────────────────────────── shapes ───────────────────────────
 
 export type TargetRow = {
@@ -178,6 +189,64 @@ export type CoverageResult = {
    */
   required: number | null;
   rows: CoverageRow[];
+};
+
+/**
+ * Column order for the grid: committed outcomes first, then aspirational
+ * activity.
+ *
+ * Fixed, and every row always carries all six. That is what structurally
+ * enforces the plan's first design rule — no activity number is ever shown
+ * alone. A rep with 200 calls and no meetings is the finding, and a payload
+ * that could return the 200 without the columns either side of it would let a
+ * screen hide exactly that.
+ */
+export const GRID_METRICS: TargetMetric[] = [
+  "REVENUE_WON",
+  "DEALS_WON",
+  "LEADS_CONVERTED",
+  "CALLS_LOGGED",
+  "MEETINGS_HELD",
+  "FIRST_TOUCHES",
+];
+
+export type TargetGridCell = {
+  metric: TargetMetric;
+  /** Null when management has not set this KPI for this person yet. */
+  targetId: string | null;
+  /**
+   * Null means "no target set", which is NOT the same as a target of 0. Zero
+   * is a deliberate "we are not chasing this metric this period"; null is an
+   * empty box waiting for a manager. Rendering both as `0` would silently
+   * invent a commitment nobody made.
+   */
+  value: number | null;
+  currency: string | null;
+  isOutcome: boolean;
+  successThreshold: number;
+};
+
+export type TargetGridRow = {
+  userId: string;
+  userName: string;
+  role: Role;
+  /** One cell per metric in `GRID_METRICS` order, set or not. */
+  cells: TargetGridCell[];
+};
+
+export type TargetGrid = {
+  period: TargetPeriod;
+  periodStart: Date;
+  periodEnd: Date;
+  periodLabel: string;
+  metrics: TargetMetric[];
+  /** One row per person who can carry a target, whether or not they have one. */
+  rows: TargetGridRow[];
+  /**
+   * The team-wide row, kept out of `rows` because it is not a person and must
+   * not be totalled or averaged alongside them.
+   */
+  team: TargetGridCell[];
 };
 
 // ─────────────────────────── internals ───────────────────────────
@@ -828,4 +897,240 @@ export async function coverage(
       };
     }),
   };
+}
+
+// ─────────────────────────── the rep × metric grid ───────────────────────────
+
+/**
+ * Every person who can carry a target, crossed with every metric, for one
+ * period — including the empty boxes.
+ *
+ * This is the shape the Settings → Targets screen needs, and `listTargets` is
+ * the wrong call for it: that returns only the rows that exist, so a rep whose
+ * KPIs have never been set would simply be absent from the grid and would
+ * quietly never get a number. Targets are set per rep, by hand, so the screen
+ * has to show who has not been done yet.
+ *
+ * READ_ONLY users are excluded from `rows`. It is an oversight role that owns
+ * no records (see `seesAllRecords`), so a revenue quota on one could never be
+ * attained by anything — an un-fillable row in a grid a manager works through
+ * top to bottom is noise that looks like an omission.
+ *
+ * Deliberately carries no attainment. This is the editing view; a settings
+ * screen should not pay for six aggregation queries to render input boxes.
+ * Call `attainment` for the reporting view.
+ */
+export async function targetGrid(
+  ctx: Ctx,
+  opts: { period: TargetPeriod; periodStart: Date },
+): Promise<TargetGrid> {
+  const timeZone = await orgTimezone(ctx.organizationId);
+  const { start, end } = boundsFor(opts.period, opts.periodStart, timeZone);
+
+  const [people, existing] = await Promise.all([
+    db.user.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        deletedAt: null,
+        role: { not: "READ_ONLY" },
+        // A REP gets a one-row grid of themselves, the same rule
+        // `listTargets` and `attainment` apply. The team matrix is management
+        // information.
+        ...(seesAllRecords(ctx) ? {} : { id: ctx.userId }),
+      },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      select: { id: true, name: true, email: true, role: true },
+    }),
+    db.target.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        period: opts.period,
+        periodStart: start,
+        ...targetVisibility(ctx),
+      },
+      select: { id: true, userId: true, metric: true, value: true, currency: true },
+    }),
+  ]);
+
+  // Keyed on person + metric. `""` stands in for the team's null userId, which
+  // cannot be a Map key alongside strings without this.
+  const bySlot = new Map(
+    existing.map((row) => [`${row.userId ?? ""}|${row.metric}`, row] as const),
+  );
+
+  const cellsFor = (userId: string | null): TargetGridCell[] =>
+    GRID_METRICS.map((metric) => {
+      const found = bySlot.get(`${userId ?? ""}|${metric}`);
+      return {
+        metric,
+        targetId: found?.id ?? null,
+        // Null, not 0 — see the note on TargetGridCell.value.
+        value: found ? Number(found.value.toString()) : null,
+        currency: found?.currency ?? null,
+        isOutcome: isOutcomeMetric(metric),
+        successThreshold: successThreshold(metric),
+      };
+    });
+
+  return {
+    period: opts.period,
+    periodStart: start,
+    periodEnd: end,
+    periodLabel: periodLabel(opts.period, start, timeZone),
+    metrics: GRID_METRICS,
+    rows: people.map((person) => ({
+      userId: person.id,
+      userName: person.name ?? person.email,
+      role: person.role,
+      cells: cellsFor(person.id),
+    })),
+    team: seesAllRecords(ctx) ? cellsFor(null) : [],
+  };
+}
+
+/**
+ * Saves many targets at once — one row of the grid, one column, or the lot.
+ *
+ * Targets are set per rep by hand, which means a manager filling in six
+ * numbers for a person would otherwise cost six round trips and six chances to
+ * half-succeed. This applies the batch atomically instead: either every number
+ * lands or none does, so the grid on screen can never disagree with the
+ * database about what was saved.
+ *
+ * The whole batch is validated BEFORE anything is written. One bad cell
+ * rejects the save and names the offending index, rather than persisting the
+ * first four numbers and erroring on the fifth — a partly-applied set of
+ * quotas is a number somebody is measured against that nobody chose.
+ */
+export async function setTargets(
+  ctx: Ctx,
+  raw: unknown,
+): Promise<Result<{ created: number; updated: number }>> {
+  requireRole(ctx, "MANAGER");
+
+  const parsed = targetSetManySchema.safeParse(raw);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return err(
+      first ? `${first.path.join(".") || "targets"}: ${first.message}` : "Check the targets",
+    );
+  }
+  const inputs = parsed.data;
+
+  // Every referenced person, in one query rather than one per entry.
+  const userIds = [...new Set(inputs.map((i) => i.userId).filter((id): id is string => !!id))];
+  if (userIds.length > 0) {
+    const members = await db.user.findMany({
+      where: { id: { in: userIds }, organizationId: ctx.organizationId, deletedAt: null },
+      select: { id: true },
+    });
+    if (members.length !== userIds.length) {
+      // Named as "not in this workspace" rather than listing which id failed:
+      // confirming that an id exists somewhere is itself a cross-tenant leak.
+      return err("One of those people is not in this workspace");
+    }
+  }
+
+  const timeZone = await orgTimezone(ctx.organizationId);
+
+  const slot = (userId: string | null, metric: TargetMetric, start: Date) =>
+    `${userId ?? ""}|${metric}|${start.getTime()}`;
+
+  const entries = inputs.map((input) => {
+    const start = boundsFor(input.period, input.periodStart, timeZone).start;
+    const userId = input.userId ?? null;
+    return {
+      key: slot(userId, input.metric, start),
+      userId,
+      metric: input.metric,
+      period: input.period,
+      periodStart: start,
+      value: input.value,
+      currency: isMoneyMetric(input.metric) ? (input.currency ?? null) : null,
+    };
+  });
+
+  // Two entries for the same slot would make the saved value depend on array
+  // order, which is not something a caller can reason about. Rejected.
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.key)) {
+      return err("The same target appears twice in that batch");
+    }
+    seen.add(entry.key);
+  }
+
+  const current = await db.target.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      periodStart: { in: [...new Set(entries.map((e) => e.periodStart.getTime()))].map((t) => new Date(t)) },
+    },
+    select: { id: true, userId: true, metric: true, periodStart: true, period: true, value: true, currency: true },
+  });
+  const bySlot = new Map(
+    current.map((row) => [slot(row.userId, row.metric, row.periodStart), row] as const),
+  );
+
+  let created = 0;
+  let updated = 0;
+
+  try {
+    await db.$transaction(
+      async (tx) => {
+        // Sequential: this pg adapter cannot run concurrent statements inside
+        // one interactive transaction.
+        for (const entry of entries) {
+          const existing = bySlot.get(entry.key);
+          const data = {
+            period: entry.period,
+            periodStart: entry.periodStart,
+            value: entry.value,
+            // Explicit null, never undefined — Prisma reads undefined as
+            // "leave this column alone".
+            currency: entry.currency,
+          };
+
+          if (existing) {
+            await tx.target.update({ where: { id: existing.id }, data });
+            await writeAudit(tx, ctx, {
+              entity: "Target",
+              entityId: existing.id,
+              action: "update",
+              before: { ...existing, value: existing.value.toString() },
+              after: { ...data, metric: entry.metric, userId: entry.userId },
+            });
+            updated++;
+            continue;
+          }
+
+          const row = await tx.target.create({
+            data: {
+              organizationId: ctx.organizationId,
+              userId: entry.userId,
+              metric: entry.metric,
+              createdById: ctx.userId,
+              ...data,
+            },
+            select: { id: true },
+          });
+          await writeAudit(tx, ctx, {
+            entity: "Target",
+            entityId: row.id,
+            action: "create",
+            after: { ...data, metric: entry.metric, userId: entry.userId },
+          });
+          created++;
+        }
+      },
+      // The default 5s is not enough for a full grid plus an audit row each.
+      { timeout: 20_000 },
+    )
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e;
+    // The transaction rolled back, so nothing was written — reporting a
+    // failure rather than an `ok` for a save that did not happen.
+    return err("Those targets were changed at the same time — reload and try again");
+  }
+
+  return ok({ created, updated });
 }

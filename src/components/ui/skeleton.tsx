@@ -65,11 +65,19 @@ export function PanelSkeleton({ lines = 4, className }: { lines?: number; classN
   );
 }
 
-/** Page shell so the header does not pop in after the body. */
+/**
+ * Page shell so the header does not pop in after the body.
+ *
+ * The band is `--header-h`, the same fixed height as the real page bar and the
+ * sidebar's workspace band. It has to be: as a padded auto-height row this
+ * stood at 60px and then jumped to 64px when the route resolved, which is
+ * precisely the pop this component exists to prevent — and while it loaded,
+ * its rule missed the sidebar's.
+ */
 export function PageSkeleton({ children }: { children: React.ReactNode }) {
   return (
     <div role="status" aria-label="Loading">
-      <header className="flex items-start justify-between gap-4 border-b border-border-subtle bg-sunken px-6 py-3.5">
+      <header className="flex h-[var(--header-h)] items-center justify-between gap-4 border-b border-border-subtle bg-sunken px-8">
         <div>
           <Skeleton className="h-4 w-32" />
           <Skeleton className="mt-2 h-2 w-56" />

@@ -69,6 +69,27 @@ export function formatMoney(amount: number, currency = "USD"): string {
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 
+/**
+ * Just the dominant currency's amount, with no "+N more" suffix.
+ *
+ * For places where the figure is set in display type and has to stay on one
+ * line — a stat tile at 30px wraps "$60,500 +1 more" onto two rows and reads
+ * as broken. The caller is then responsible for saying elsewhere that other
+ * currencies exist; dropping that on the floor would misreport the total,
+ * which is the thing this module exists to prevent.
+ */
+export function formatDominant(total: MoneyTotal): string {
+  if (!total.dominant) return formatMoney(0);
+  return formatMoney(total.dominant.amount, total.dominant.currency);
+}
+
+/** How to say "and there are others", for the caller to put beside it. */
+export function otherCurrencyNote(total: MoneyTotal): string | undefined {
+  if (!total.mixed) return undefined;
+  const others = total.byCurrency.length - 1;
+  return `plus ${others} other ${others === 1 ? "currency" : "currencies"}`;
+}
+
 /** One-line summary of a possibly-mixed total. */
 export function formatTotal(total: MoneyTotal): string {
   if (!total.dominant) return formatMoney(0);

@@ -6,12 +6,15 @@ import { db } from "@/lib/db";
 import { type Ctx, ForbiddenError } from "@/server/authz";
 import * as targetsModule from "@/server/services/targets";
 import {
+  GRID_METRICS,
   attainment,
   copyTargets,
   coverage,
   deleteTarget,
   listTargets,
   setTarget,
+  setTargets,
+  targetGrid,
 } from "@/server/services/targets";
 import { dropOrg, makeOrg } from "./factories";
 
@@ -796,6 +799,209 @@ describe("targets, quotas and KPI attainment", () => {
     // The other org has no targets of its own, and cannot reach this one's.
     expect(result.ok).toBe(false);
     expect(await db.target.count({ where: { organizationId: other.org.id } })).toBe(0);
+  });
+
+  // ─────────────────────────── the rep x metric grid ───────────────────────────
+
+  it("shows every rep crossed with every metric, empty boxes included", async () => {
+    const grid = await targetGrid(org.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+
+    // Targets are set per rep by hand, so the grid has to show who has not
+    // been done yet — the owner, the rep and the manager all appear.
+    expect(grid.rows).toHaveLength(3);
+    expect(grid.metrics).toEqual(GRID_METRICS);
+    expect(grid.rows.every((r) => r.cells.length === GRID_METRICS.length)).toBe(true);
+
+    const managerRow = grid.rows.find((r) => r.role === "MANAGER");
+    expect(managerRow).toBeDefined();
+    // Nothing has ever been set for the manager: every box is empty.
+    expect(managerRow?.cells.every((c) => c.value === null && c.targetId === null)).toBe(true);
+  });
+
+  it("distinguishes an unset KPI from a KPI deliberately set to zero", async () => {
+    const scratch = await makeOrg();
+    try {
+      await set(scratch.ctx, { userId: scratch.user.id, metric: "CALLS_LOGGED", period: "MONTH", periodStart: SEPTEMBER, value: 0 });
+      const grid = await targetGrid(scratch.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+      const cells = grid.rows[0].cells;
+
+      // 0 is a decision — "we are not chasing calls this month". null is an
+      // empty box nobody has filled in. Collapsing them would invent a
+      // commitment for every metric in the grid.
+      const calls = cells.find((c) => c.metric === "CALLS_LOGGED");
+      expect(calls?.value).toBe(0);
+      expect(calls?.targetId).not.toBeNull();
+
+      const meetings = cells.find((c) => c.metric === "MEETINGS_HELD");
+      expect(meetings?.value).toBeNull();
+      expect(meetings?.targetId).toBeNull();
+    } finally {
+      await dropOrg(scratch.org.id);
+    }
+  });
+
+  it("fills in the values management has already set", async () => {
+    const grid = await targetGrid(org.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+    const ownerRow = grid.rows.find((r) => r.userId === org.user.id);
+
+    const revenue = ownerRow?.cells.find((c) => c.metric === "REVENUE_WON");
+    expect(revenue?.value).toBe(50_000);
+    expect(revenue?.currency).toBe("USD");
+    expect(revenue?.isOutcome).toBe(true);
+    expect(revenue?.successThreshold).toBe(1);
+
+    const calls = ownerRow?.cells.find((c) => c.metric === "CALLS_LOGGED");
+    expect(calls?.value).toBe(40);
+    // Activity is aspirational and the grid says so, so the screen cannot
+    // grade a call target the way it grades a quota.
+    expect(calls?.isOutcome).toBe(false);
+    expect(calls?.successThreshold).toBe(0.7);
+  });
+
+  it("keeps the team row out of the per-person rows", async () => {
+    const grid = await targetGrid(org.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+
+    // Not a person, so it must not be totalled or averaged alongside them.
+    expect(grid.rows.every((r) => r.userId !== null)).toBe(true);
+    expect(grid.team.find((c) => c.metric === "REVENUE_WON")?.value).toBe(100_000);
+  });
+
+  it("leaves READ_ONLY users out of the grid", async () => {
+    const grid = await targetGrid(org.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+    // An oversight role owns no records, so a quota on one could never be
+    // attained by anything.
+    expect(grid.rows.some((r) => r.role === "READ_ONLY")).toBe(false);
+    expect(grid.rows.some((r) => r.userId === readOnlyCtx.userId)).toBe(false);
+  });
+
+  it("gives a REP a grid of themselves alone", async () => {
+    const grid = await targetGrid(repCtx, { period: "MONTH", periodStart: SEPTEMBER });
+
+    expect(grid.rows).toHaveLength(1);
+    expect(grid.rows[0].userId).toBe(repId);
+    // The team row is management information.
+    expect(grid.team).toEqual([]);
+    expect(grid.rows[0].cells.find((c) => c.metric === "CALLS_LOGGED")?.value).toBe(30);
+  });
+
+  it("isolates the grid across tenants", async () => {
+    const grid = await targetGrid(other.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+    expect(grid.rows.every((r) => r.cells.every((c) => c.value === null))).toBe(true);
+    expect(grid.team.every((c) => c.value === null)).toBe(true);
+  });
+
+  // ─────────────────────────── saving a grid row ───────────────────────────
+
+  it("saves a whole row of KPIs in one call", async () => {
+    const scratch = await makeOrg();
+    try {
+      const base = { userId: scratch.user.id, period: "MONTH" as const, periodStart: SEPTEMBER };
+      const result = await setTargets(scratch.ctx, [
+        { ...base, metric: "REVENUE_WON", value: 40_000, currency: "USD" },
+        { ...base, metric: "DEALS_WON", value: 6 },
+        { ...base, metric: "CALLS_LOGGED", value: 120 },
+        { ...base, metric: "MEETINGS_HELD", value: 12 },
+      ]);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.error);
+      expect(result.data).toEqual({ created: 4, updated: 0 });
+
+      // Setting the same row again updates in place rather than duplicating.
+      const again = await setTargets(scratch.ctx, [
+        { ...base, metric: "REVENUE_WON", value: 45_000, currency: "USD" },
+        { ...base, metric: "FIRST_TOUCHES", value: 50 },
+      ]);
+      if (!again.ok) throw new Error(again.error);
+      expect(again.data).toEqual({ created: 1, updated: 1 });
+
+      const grid = await targetGrid(scratch.ctx, { period: "MONTH", periodStart: SEPTEMBER });
+      const cells = grid.rows[0].cells;
+      expect(cells.find((c) => c.metric === "REVENUE_WON")?.value).toBe(45_000);
+      expect(cells.find((c) => c.metric === "FIRST_TOUCHES")?.value).toBe(50);
+      expect(await db.target.count({ where: { organizationId: scratch.org.id } })).toBe(5);
+    } finally {
+      await dropOrg(scratch.org.id);
+    }
+  });
+
+  it("writes nothing at all when one cell in the batch is invalid", async () => {
+    const scratch = await makeOrg();
+    try {
+      const base = { userId: scratch.user.id, period: "MONTH" as const, periodStart: SEPTEMBER };
+      const result = await setTargets(scratch.ctx, [
+        { ...base, metric: "DEALS_WON", value: 6 },
+        // Missing the currency a revenue target requires.
+        { ...base, metric: "REVENUE_WON", value: 40_000 },
+      ]);
+      expect(result.ok).toBe(false);
+
+      // The valid first entry must NOT have landed. A half-saved grid is a
+      // number somebody is measured against that nobody chose.
+      expect(await db.target.count({ where: { organizationId: scratch.org.id } })).toBe(0);
+    } finally {
+      await dropOrg(scratch.org.id);
+    }
+  });
+
+  it("rejects a batch naming the same target twice", async () => {
+    const scratch = await makeOrg();
+    try {
+      const base = { userId: scratch.user.id, period: "MONTH" as const, periodStart: SEPTEMBER };
+      const result = await setTargets(scratch.ctx, [
+        { ...base, metric: "DEALS_WON", value: 6 },
+        { ...base, metric: "DEALS_WON", value: 9 },
+      ]);
+      // Which value won would depend on array order, which no caller can
+      // reason about.
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/twice/i);
+      expect(await db.target.count({ where: { organizationId: scratch.org.id } })).toBe(0);
+    } finally {
+      await dropOrg(scratch.org.id);
+    }
+  });
+
+  it("refuses a batch touching a user in another organization", async () => {
+    const result = await setTargets(other.ctx, [
+      { userId: org.user.id, metric: "DEALS_WON", period: "MONTH", periodStart: SEPTEMBER, value: 3 },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not in this workspace/i);
+    expect(await db.target.count({ where: { organizationId: other.org.id } })).toBe(0);
+  });
+
+  it("requires MANAGER or above to save a batch", async () => {
+    await expect(
+      setTargets(repCtx, [
+        { userId: repId, metric: "CALLS_LOGGED", period: "MONTH", periodStart: SEPTEMBER, value: 10 },
+      ]),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  it("audits every target in a batch", async () => {
+    const scratch = await makeOrg();
+    try {
+      const base = { userId: scratch.user.id, period: "MONTH" as const, periodStart: SEPTEMBER };
+      const result = await setTargets(scratch.ctx, [
+        { ...base, metric: "DEALS_WON", value: 6 },
+        { ...base, metric: "CALLS_LOGGED", value: 100 },
+      ]);
+      expect(result.ok).toBe(true);
+
+      const log = await db.auditLog.findMany({
+        where: { organizationId: scratch.org.id, entity: "Target" },
+        select: { action: true },
+      });
+      expect(log).toHaveLength(2);
+      expect(log.every((l) => l.action === "create")).toBe(true);
+    } finally {
+      await dropOrg(scratch.org.id);
+    }
+  });
+
+  it("rejects an empty batch rather than reporting a successful no-op", async () => {
+    const result = await setTargets(org.ctx, []);
+    expect(result.ok).toBe(false);
   });
 
   // ─────────────────────────── the thing this must not do ───────────────────────────

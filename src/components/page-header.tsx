@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/components/account-menu";
+import { NotificationBell } from "@/components/notification-bell";
 import { db } from "@/lib/db";
 import { requireCtx } from "@/server/context";
+import { unreadCount } from "@/server/services/notifications";
 
 /**
  * The page bar.
@@ -26,14 +28,19 @@ export async function PageHeader({
   action?: ReactNode;
 }) {
   const ctx = await requireCtx();
-  const user = await db.user.findUnique({
-    where: { id: ctx.userId },
-    select: { name: true, email: true },
-  });
+  // Both reads, so they are safe to run together — it is interactive
+  // transactions this pg adapter cannot run concurrently, not selects.
+  const [user, unread] = await Promise.all([
+    db.user.findUnique({
+      where: { id: ctx.userId },
+      select: { name: true, email: true },
+    }),
+    unreadCount(ctx),
+  ]);
 
   return (
     <header className="sticky top-0 z-20 border-b border-border-subtle bg-page">
-      <div className="mx-auto flex min-h-[var(--header-h)] w-full max-w-[1280px] items-center justify-between gap-6 px-8 py-3">
+      <div className="mx-auto flex h-[var(--header-h)] w-full max-w-[1280px] items-center justify-between gap-6 px-8">
         <div className="min-w-0">
           <h1 className="truncate text-[18px] font-[590] leading-6 tracking-[-0.014em]">
             {title}
@@ -48,6 +55,7 @@ export async function PageHeader({
           {/* A rule between the page's own actions and the account, so the two
               read as separate groups rather than one row of controls. */}
           {action ? <span aria-hidden className="h-5 w-px bg-border-subtle" /> : null}
+          <NotificationBell unread={unread} />
           <AccountMenu
             userName={user?.name ?? null}
             userEmail={user?.email ?? ""}
