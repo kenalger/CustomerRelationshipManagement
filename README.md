@@ -2,6 +2,8 @@
 
 B2B sales CRM — leads, contacts, and pipeline in one place, with lead ingestion from Facebook and email as the differentiator.
 
+**Picking this up? Read [`HANDOFF.md`](./HANDOFF.md) first** — current state, what does not work and why, and the gotchas that cost real time.
+
 **All planning lives in [`plan/`](./plan).** Read [`plan/README.md`](./plan/README.md) first — code without a plan document is unreviewed scope.
 
 ## Stack

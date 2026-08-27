@@ -14,6 +14,7 @@ One folder per feature: `plan.md` (required), `ux.md`, `tasks.md`. Copy from `pl
 | `list-views/` | M1 / M5 | Shipped 2026-08-24 |
 | `org-settings/` | M3a | Shipped 2026-08-26 |
 | `outreach/` | M5 | Shipped 2026-08-26 — sending still blocked on a provider |
-| `kpis/` | M6 | **Draft — decisions needed** |
+| `kpis/` | M6 | Shipped 2026-08-26 |
+| `automation/` | M4 | Shipped 2026-08-27 — Facebook connect still blocked on Meta App Review |
 
 Design system lives in [`plan/08-design/`](../08-design/design-system.md).

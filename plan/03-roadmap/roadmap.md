@@ -43,16 +43,35 @@ Source-agnostic ingestion pipeline, then one source at a time. Split into sub-mi
 
 See `04-features/lead-ingestion/plan.md` and `decisions.md`.
 
-## M4 — Automation rules builder
-Admin-facing trigger → condition → action builder over the ingestion event stream (~6 wks). Notifications, SLA timers, and auto-assignment ship earlier in M3a as fixed rules; M4 makes them user-composable.
+## M4 — Automation rules builder ✅ *shipped 2026-08-27*
+Trigger → conditions → steps, user-composable, with a run log.
+*Built:* five triggers wired to the real service call sites; conditions that reuse the segment filter vocabulary rather than inventing a second condition language; five actions, each gated to the record kinds it makes sense for; a `SET_FIELD` whitelist, because a rule that can write any column is an arbitrary write primitive; three loop guards (one run per record per event, actions inside a run raise nothing, a daily cap); a list and an editor at `/settings/automations`.
+*Worth knowing:* the engine arrived complete and completely inert — nothing called `dispatch`, and no engine test could have caught it. `tests/automation-wiring.test.ts` asserts the seam, not the engine.
+*Not yet:* branching, delays, outbound webhooks, AI steps. See `04-features/automation/plan.md` for why each is excluded.
 
 ## M4.5 — Design system 🔨 *pass 1 shipped 2026-08-24*
 Theme-switchable token system (light + dark), rebuilt primitives, redesigned Overview / Leads / Pipeline / Contacts / Companies / Auth, and the first two charts. See `plan/08-design/`.
 Pass 2 added drag-and-drop on the board (keyboard-accessible, optimistic), a ⌘K command palette searching all four record types, and themed toasts.
 *Not yet:* inline edit, saved views, bulk actions, dialog primitive.
 
-## M5 — Reporting + polish
-Dashboards, activity reports, forecast history, exports, ⌘K global search, keyboard shortcuts, bulk actions.
+## M5 — Reporting + polish ✅ *largely shipped 2026-08-26*
+*Built:* `/reports` — lead volume and conversion by source, pipeline health with days-in-stage, win/loss with grouped lost reasons, per-rep throughput, forecast accuracy (the first thing to compare `expectedCloseDate` against `closedAt`). ⌘K search, bulk actions, inline editing and saved views all shipped earlier.
+*Not yet:* exports, forecast history.
+
+## M6 — Sales management ✅ *shipped 2026-08-26*
+Lead scoring, tagging, segments, targets and KPIs.
+*Built:* editable scoring weights with the queue sorted on score; tags across contacts/companies/leads; saved segments whose filter is a typed document rather than a stored `where`; quotas and activity targets with live attainment, pace, and pipeline coverage derived from the team's own win rate instead of a borrowed 3×.
+*Design constraint worth keeping:* outcome and activity metrics appear on the same row, and are graded differently — 100% for a quota, 70% for an activity target. See `plan/07-research/sales-kpis-and-quotas.md` for why.
+
+## M7 — Outbound ✅ *shipped without sending, 2026-08-26*
+Prospect lists, campaigns, sequence steps, A/B templates, enrollments, suppression.
+*Built and tested end to end without an email provider:* a due step creates a task for a person. Nothing in the codebase pretends a message went out. Suppression is enforced at **enrollment**, not at send, so a suppressed address cannot sit inside a live sequence at all.
+*Blocked:* actual sending. One decision — see `04-features/outreach/plan.md`.
+
+## Known gaps, carried forward
+- **Recurring revenue.** Deals are one-off amounts; an agency lives on retainers. This makes revenue quotas understate the business and is the largest modelling gap in the product.
+- **Meta OAuth connect flow.** Code is small; shipping is blocked on App Review.
+- **`Organization` → `Group`.** Raised and never resolved. See `HANDOFF.md`.
 
 ## Explicitly not on this roadmap
 Marketing email campaigns, support ticketing, invoicing, mobile native apps, a no-code app builder.
