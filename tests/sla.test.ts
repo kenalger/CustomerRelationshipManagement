@@ -62,7 +62,6 @@ describe("speed-to-lead SLA", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("leaves a fresh lead alone", async () => {

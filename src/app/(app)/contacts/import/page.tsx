@@ -11,7 +11,7 @@ export default async function ImportContactsPage() {
     <>
       <PageHeader
         title="Import contacts"
-        description="Upload a CSV, check the mapping, then import."
+        description="Bring people in from a CSV or a shared Google Sheet. Check the mapping before anything is written."
       />
       <div className="mx-auto w-full max-w-5xl p-8">
         <ImportWizard />

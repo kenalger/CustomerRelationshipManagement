@@ -36,7 +36,6 @@ describe("deal aging and loss reasons", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("stamps stageEnteredAt on creation", async () => {

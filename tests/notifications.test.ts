@@ -125,7 +125,6 @@ describe("notifications from real events", () => {
   });
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("tells the assigned owner when a lead arrives", async () => {

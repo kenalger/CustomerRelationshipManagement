@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, FileUp, Upload } from "lucide-react";
+import { AlertCircle, FileUp, TableProperties, Upload } from "lucide-react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { useRef, useState, useTransition } from "react";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { Callout } from "@/components/ui/callout";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/field";
+import { Input, Select } from "@/components/ui/field";
 import { Td, TableShell, Th, Tr } from "@/components/ui/table";
 import {
   HEADER_ALIASES,
@@ -17,6 +17,7 @@ import {
   type ImportField,
 } from "@/lib/validation/import";
 import { importContactsAction } from "@/server/actions/import";
+import { fetchSheetAction } from "@/server/actions/sheets";
 import type { ImportSummary } from "@/server/services/import";
 
 type Parsed = { headers: string[]; rows: Record<string, string>[] };
@@ -46,9 +47,12 @@ export function ImportWizard() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [importing, startImport] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [loadingSheet, startSheet] = useTransition();
 
-  function onFile(file: File) {
-    Papa.parse<Record<string, string>>(file, {
+  /** Papa takes a File or a string; the completion handling is identical. */
+  function ingest(input: File | string) {
+    Papa.parse<Record<string, string>>(input as never, {
       header: true,
       skipEmptyLines: "greedy",
       complete: (result) => {
@@ -61,7 +65,23 @@ export function ImportWizard() {
         setMapping(autoMap(headers));
         setSummary(null);
       },
-      error: (error) => toast.error(`Could not read the file: ${error.message}`),
+      error: (error: { message: string }) =>
+        toast.error(`Could not read that data: ${error.message}`),
+    });
+  }
+
+  const onFile = (file: File) => ingest(file);
+
+  function loadSheet() {
+    const url = sheetUrl.trim();
+    if (url === "") return;
+    startSheet(async () => {
+      const result = await fetchSheetAction(url);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      ingest(result.csv);
     });
   }
 
@@ -185,9 +205,39 @@ export function ImportWizard() {
           </Button>
         </div>
 
+        <div className="rounded-lg border border-border-subtle bg-surface p-4">
+          <p className="text-[13px] font-[560]">…or paste a Google Sheets link</p>
+          <p className="mt-0.5 text-[12px] text-muted">
+            The sheet has to be shared — set it to “Anyone with the link can view”. Nothing is
+            connected and nothing stays in sync; the rows are read once, now.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Input
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") loadSheet();
+              }}
+              placeholder="https://docs.google.com/spreadsheets/d/…"
+              aria-label="Google Sheets link"
+              className="min-w-[18rem] flex-1"
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={loadSheet}
+              loading={loadingSheet}
+              disabled={sheetUrl.trim() === ""}
+            >
+              <TableProperties size={14} strokeWidth={2} aria-hidden />
+              Read the sheet
+            </Button>
+          </div>
+        </div>
+
         <p className="text-[12px] text-muted">
-          Nothing is uploaded until you confirm the mapping — the file is parsed in your browser
-          first.
+          Nothing is imported until you confirm the mapping — a file is parsed in your browser, and
+          a sheet is read by the server and shown to you before anything is written.
         </p>
       </div>
     );

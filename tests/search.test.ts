@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { db } from "@/lib/db";
 import { createCompany } from "@/server/services/companies";
 import { createContact } from "@/server/services/contacts";
 import { createDeal } from "@/server/services/deals";
@@ -51,7 +50,6 @@ describe("cross-entity search", () => {
   afterAll(async () => {
     await dropOrg(a.org.id);
     await dropOrg(b.org.id);
-    await db.$disconnect();
   });
 
   it("finds every entity type in one query", async () => {

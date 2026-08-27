@@ -89,7 +89,6 @@ describe("role model", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   describe("the rule itself", () => {

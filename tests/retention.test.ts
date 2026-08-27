@@ -42,7 +42,6 @@ describe("raw payload retention", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("actually nulls the payload rather than reporting a no-op", async () => {

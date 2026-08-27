@@ -45,7 +45,6 @@ describe("inline cell editing", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("saves a single field the way a cell edit does", async () => {

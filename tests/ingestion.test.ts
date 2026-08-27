@@ -38,7 +38,6 @@ describe("ingestion", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("creates a lead and assigns an owner so nothing lands unowned", async () => {

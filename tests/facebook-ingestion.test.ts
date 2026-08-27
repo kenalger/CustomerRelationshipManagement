@@ -196,7 +196,6 @@ describe("two-phase leadgen processing", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("records the raw payload before any network call", async () => {

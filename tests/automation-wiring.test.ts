@@ -42,7 +42,6 @@ describe("automation wiring", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("fires LEAD_CREATED from a real ingestion, and the step actually runs", async () => {

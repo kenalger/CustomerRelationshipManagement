@@ -191,7 +191,6 @@ describe("targets, quotas and KPI attainment", () => {
   afterAll(async () => {
     await dropOrg(org.org.id);
     await dropOrg(other.org.id);
-    await db.$disconnect();
   });
 
   const owner = (rows: targetsModule.AttainmentRow[], metric: string) =>

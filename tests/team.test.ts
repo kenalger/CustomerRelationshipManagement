@@ -25,7 +25,6 @@ describe("invitations", () => {
   afterAll(async () => {
     await dropOrg(org.org.id);
     await dropOrg(other.org.id);
-    await db.$disconnect();
   });
 
   it("never stores the raw token", async () => {

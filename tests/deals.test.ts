@@ -37,7 +37,6 @@ describe("deals and companies", () => {
   afterAll(async () => {
     await dropOrg(a.org.id);
     await dropOrg(b.org.id);
-    await db.$disconnect();
   });
 
   it("puts a new deal in the first stage of the default pipeline", async () => {

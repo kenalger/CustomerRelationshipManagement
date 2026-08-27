@@ -72,7 +72,6 @@ describe("tasks", () => {
   afterAll(async () => {
     await dropOrg(org.org.id);
     await dropOrg(other.org.id);
-    await db.$disconnect();
   });
 
   it("assigns to the creator by default", async () => {

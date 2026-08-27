@@ -62,7 +62,6 @@ describe("leadership reporting", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("breaks leads down by source with a real conversion rate", async () => {

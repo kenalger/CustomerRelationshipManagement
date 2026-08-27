@@ -31,7 +31,6 @@ describe("CSV import", () => {
   });
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("imports clean rows and creates companies once", async () => {

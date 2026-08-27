@@ -83,7 +83,6 @@ describe("queue and connection health", () => {
 
   afterAll(async () => {
     await dropOrg(org.org.id);
-    await db.$disconnect();
   });
 
   it("schedules a retry after a transient failure", async () => {

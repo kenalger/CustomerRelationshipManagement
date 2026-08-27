@@ -91,7 +91,6 @@ describe("tags", () => {
   afterAll(async () => {
     await dropOrg(org.org.id);
     await dropOrg(other.org.id);
-    await db.$disconnect();
   });
 
   describe("lifecycle", () => {

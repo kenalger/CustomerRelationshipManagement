@@ -48,7 +48,6 @@ describe("tenant isolation", () => {
   afterAll(async () => {
     await dropOrg(a.org.id);
     await dropOrg(b.org.id);
-    await db.$disconnect();
   });
 
   describe("contacts", () => {

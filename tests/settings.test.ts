@@ -108,7 +108,6 @@ describe("pipeline administration", () => {
   afterAll(async () => {
     await dropOrg(org.org.id);
     await dropOrg(other.org.id);
-    await db.$disconnect();
   });
 
   it("never creates an empty pipeline", async () => {
