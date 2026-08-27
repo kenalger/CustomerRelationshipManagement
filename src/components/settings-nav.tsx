@@ -14,6 +14,7 @@ const SECTIONS = [
   { href: "/settings/tags", label: "Tags" },
   { href: "/settings/templates", label: "Templates" },
   { href: "/settings/suppression", label: "Do not contact" },
+  { href: "/settings/automations", label: "Automations" },
   { href: "/settings/connections", label: "Connections" },
 ] as const;
 
@@ -30,7 +31,7 @@ export function SettingsNav({ alert = 0 }: { alert?: number }) {
 
   return (
     <nav aria-label="Settings sections" className="border-b border-border-subtle">
-      <div className="mx-auto flex w-full max-w-5xl gap-1 px-8">
+      <div className="mx-auto flex w-full max-w-5xl gap-1 overflow-x-auto px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {SECTIONS.map((section) => {
         const active = pathname === section.href || pathname.startsWith(`${section.href}/`);
         const showAlert = section.href === "/settings/connections" && alert > 0;
@@ -41,7 +42,7 @@ export function SettingsNav({ alert = 0 }: { alert?: number }) {
             href={section.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative flex items-center gap-1.5 px-2.5 py-2.5 text-[14px] transition-colors",
+              "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 py-2.5 text-[14px] transition-colors",
               active
                 ? "font-[560] text-foreground"
                 : "text-secondary hover:text-foreground",

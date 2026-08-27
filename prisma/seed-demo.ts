@@ -657,6 +657,53 @@ async function main() {
   }
   console.log(`  targets: ${targetSpecs.length} across people, metrics and both period lengths`);
 
+  // ─────────────────────────── automations ───────────────────────────
+  // One live rule and one draft, so the list shows both states and the run
+  // history has something in it the first time anyone opens the screen.
+  const automationSpecs = [
+    {
+      name: "Route hot inbound leads",
+      description: "A lead worth chasing goes straight to whoever has the fewest, with a call task.",
+      trigger: "LEAD_CREATED" as const,
+      enabled: true,
+      conditions: { scoreMin: 70 },
+      steps: [
+        { position: 1, action: "ASSIGN_OWNER" as const, config: { strategy: "ROUND_ROBIN" } },
+        { position: 2, action: "CREATE_TASK" as const, config: { title: "Call this lead today", dueInDays: 0 } },
+      ],
+    },
+    {
+      name: "Chase stalled qualified leads",
+      description: "Draft — nobody has turned this on yet.",
+      trigger: "LEAD_STATUS_CHANGED" as const,
+      enabled: false,
+      conditions: { status: ["QUALIFIED"] },
+      steps: [
+        { position: 1, action: "NOTIFY" as const, config: { message: "This lead just qualified — pick it up." } },
+      ],
+    },
+  ];
+
+  for (const spec of automationSpecs) {
+    const { steps, ...fields } = spec;
+    const existing = await db.automation.findFirst({
+      where: { organizationId: org.id, name: spec.name },
+      select: { id: true },
+    });
+    const id = existing
+      ? (await db.automation.update({ where: { id: existing.id }, data: fields, select: { id: true } })).id
+      : (await db.automation.create({
+          data: { organizationId: org.id, createdById: owner.id, ...fields },
+          select: { id: true },
+        })).id;
+
+    await db.automationStep.deleteMany({ where: { automationId: id } });
+    for (const step of steps) {
+      await db.automationStep.create({ data: { automationId: id, ...step } });
+    }
+  }
+  console.log(`  automations: ${automationSpecs.length} — one live, one draft`);
+
   // ─────────────────────────── notifications ───────────────────────────
   const notificationSpecs = [
     { type: "LEAD_ASSIGNED" as const, title: "Rosa Delgado assigned to you", body: "Facebook lead ad · Fernvale Studio", userId: owner.id, readAt: null, daysAgo: 0.05 },

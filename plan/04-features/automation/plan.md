@@ -1,6 +1,6 @@
 # Feature: connections, imports and automation
 
-- **Status:** Draft — automation is buildable now; two of the four asks are blocked on things that are not code.
+- **Status:** Engine, wiring, UI and the Google Sheets import shipped 2026-08-27. Facebook's connect flow is the one piece left, and it is blocked on Meta App Review rather than on code.
 - **Last updated:** 2026-08-26
 - **Research:** `plan/07-research/crm-automation.md`, `plan/07-research/meta-lead-ads-api.md`
 
@@ -10,9 +10,9 @@
 |---|---|
 | Accept data from Facebook | **Pipeline built, front door missing.** |
 | Connections screen | Built, but nothing can create a connection through it. |
-| Accept data from Google Sheets | **Nothing.** |
+| Accept data from Google Sheets | ✅ **Import shipped** — a shared link read once, server-side, into the existing CSV importer. Not sync, and the UI says so. |
 | Accept imports | **Built** — CSV importer at `/contacts/import`. |
-| Automation | **Nothing.** No rules engine of any kind. |
+| Automation | ✅ **Shipped** — trigger, conditions, steps, run log, three loop guards, and screens to build a rule without SQL. |
 
 ### Facebook: the pipeline is real, the front door is not
 
